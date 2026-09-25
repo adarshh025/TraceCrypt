@@ -1,0 +1,134 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tracecrypt"
+version = "0.1.0"
+description = "Offline Forensic Document Attribution Platform"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "NOT YET SELECTED" }
+authors = [
+    { name = "TraceCrypt Core Architecture Team" }
+]
+keywords = [
+    "post-quantum",
+    "forensics",
+    "watermarking",
+    "dlt",
+    "blockchain",
+    "attribution",
+    "air-gap",
+    "fips-203",
+    "fips-204"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Legal Industry",
+    "Topic :: Security :: Cryptography",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent"
+]
+dependencies = [
+    "cryptography>=50.0.0",
+    "pydantic>=2.10.0",
+    "numpy>=2.0.0",
+    "scipy>=1.14.0",
+    "opencv-python>=4.10.0",
+    "pillow>=11.0.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "aiosqlite>=0.21.0",
+    "sqlalchemy>=2.0.0",
+    "pdfminer.six>=20240000",
+    "reportlab>=4.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.28.0",
+    "flake8>=7.0.0",
+    "mypy>=1.10.0",
+    "coverage>=7.4.0"
+]
+
+[project.scripts]
+tracecrypt = "tracecrypt.cli.main:main"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --strict-markers -ra"
+markers = [
+    "unit: Isolated unit tests",
+    "integration: Cross-module integration tests",
+    "security: Security assertion and attack simulation tests",
+    "slow: Tests with higher compute load"
+]
+
+[tool.coverage.run]
+branch = true
+source = ["tracecrypt"]
+omit = [
+    "tests/*",
+    "*/__init__.py"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):"
+]
+fail_under = 80.0
+show_missing = true
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+no_implicit_reexport = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "cv2.*",
+    "scipy.*",
+    "pdfminer.*",
+    "reportlab.*",
+    "aiosqlite.*"
+]
+ignore_missing_imports = true
+
+[tool.flake8]
+max-line-length = 120
+extend-ignore = ["E203", "W503"]
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    ".venv",
+    "data"
+]
