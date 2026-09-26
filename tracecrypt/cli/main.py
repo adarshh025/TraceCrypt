@@ -51,7 +51,16 @@ from tracecrypt.identity.keystore import KeystoreManager
 from tracecrypt.identity.lifecycle import KeyLifecycleManager, OfflineRevocationStore, RevocationReason
 from tracecrypt.security.airgap import AirGapGuard
 from tracecrypt.storage.sqlite_store import SQLiteStorageManager
+from tracecrypt.utils.identifiers import SessionID, WatermarkID
 from tracecrypt.utils.timestamps import utc_now_micros
+from tracecrypt.watermark import (
+    ExtractionStatus,
+    WatermarkBenchmark,
+    WatermarkEmbedder,
+    WatermarkExtractor,
+    WatermarkParameters,
+    WatermarkPayload,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -186,6 +195,34 @@ def build_parser() -> argparse.ArgumentParser:
         "--dev-mode", action="store_true",
         help="Explicit confirmation of restricted developer/test mode",
     )
+
+    # Command: watermark
+    wm_parser = subparsers.add_parser("watermark", help="Forensic invisible watermarking commands")
+    wm_sub = wm_parser.add_subparsers(dest="subcommand", help="Watermark operations")
+
+    wm_inspect = wm_sub.add_parser("inspect", help="Inspect watermarked document or payload")
+    wm_inspect.add_argument("file", help="Path to watermarked document file (PDF or image)")
+    wm_inspect.add_argument("--doc-hash", default=None, help="Source document SHA3-256 hash (computed if omitted)")
+
+    wm_embed = wm_sub.add_parser("embed", help="Embed forensic watermark (test/dev mode)")
+    wm_embed.add_argument("--input", "-i", dest="input_file", required=True, help="Path to input document (PDF)")
+    wm_embed.add_argument("--output", "-o", dest="output_file", default=None, help="Output watermarked PDF path")
+    wm_embed.add_argument("--doc-hash", default=None, help="Source document SHA3-256 hash (computed if omitted)")
+    wm_embed.add_argument("--watermark-id", default=None, help="Optional 128-bit WatermarkID hex")
+    wm_embed.add_argument("--session-id", default=None, help="Optional 128-bit SessionID hex")
+    wm_embed.add_argument("--strength", type=float, default=8.0, help="Embedding strength alpha (default: 8.0)")
+
+    wm_extract = wm_sub.add_parser("extract", help="Blindly extract forensic watermark from leaked document")
+    wm_extract.add_argument("file", help="Path to leaked document (PDF or image)")
+    wm_extract.add_argument("--doc-hash", default=None, help="Source document SHA3-256 hash (computed if omitted)")
+    wm_extract.add_argument("--no-deskew", action="store_true", help="Disable deskew search in extraction")
+
+    wm_bench = wm_sub.add_parser("benchmark", help="Run empirical performance and latency benchmark")
+    wm_bench.add_argument("--input", "-i", dest="input_file", default=None, help="Optional input PDF file")
+
+    wm_attack = wm_sub.add_parser("attack-test", help="Run automated robustness attack simulation matrix")
+    wm_attack.add_argument("--input", "-i", dest="input_file", default=None, help="Optional input PDF file")
+    wm_attack.add_argument("--strength", type=float, default=10.0, help="Embedding strength alpha (default: 10.0)")
 
     return parser
 
@@ -967,6 +1004,283 @@ def cmd_document_decrypt(args: argparse.Namespace) -> int:
         return 1
 
 
+def _generate_test_pdf_bytes() -> bytes:
+    """Generate in-memory sample 2-page PDF document for benchmarking."""
+    import io
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    # Page 1
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(72, 720, "TraceCrypt Forensic Watermark Test Document")
+    c.setFont("Helvetica", 11)
+    c.drawString(72, 690, "Confidential forensic specification and architecture validation.")
+    for i in range(15):
+        line_text = f"Section 4.{i+1}: Cryptographic binding verification and transform domain analysis."
+        c.drawString(72, 650 - i * 20, line_text)
+    c.showPage()
+    # Page 2
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(72, 720, "Page 2: Forensic Attestation Records")
+    for i in range(12):
+        c.drawString(72, 680 - i * 22, f"Attestation entry 0x{i*1024:04X}: Zero-knowledge validation stream token.")
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+def cmd_watermark_inspect(args: argparse.Namespace) -> int:
+    try:
+        p = Path(args.file)
+        if not p.exists():
+            print(f"Error: File '{p}' not found.")
+            return 1
+
+        raw_bytes = p.read_bytes()
+        doc_hash = args.doc_hash or DocumentHasher.hash_bytes(raw_bytes)
+
+        print("==================================================")
+        print("TraceCrypt Forensic Watermark Inspection")
+        print("==================================================")
+        print(f"Target File:           {p}")
+        print(f"Document Size:         {len(raw_bytes)} bytes")
+        print(f"Document SHA3-256:     {doc_hash}")
+        print("Running blind forensic extraction across document pages...")
+
+        result = WatermarkExtractor.extract_document(raw_bytes, doc_hash)
+        print("--------------------------------------------------")
+        print(f"Extraction Status:     {result.status.value}")
+        print(f"Confidence Score:      {result.confidence:.2%}")
+        print(f"Correlation:           {result.correlation_score:.4f}")
+        print(f"Pages Analyzed:        {result.pages_analyzed}")
+        print(f"Pages Decoded:         {result.pages_decoded}")
+        print(f"Pages Corrupted:       {result.pages_corrupted}")
+
+        if result.status == ExtractionStatus.DECODED and result.watermark_id:
+            print("Decoded Forensic Payload:")
+            print(f"  Watermark Version:   {result.watermark_version}")
+            print(f"  WatermarkID:         {result.watermark_id}")
+            print(f"  SessionID:           {result.session_id}")
+            print(f"  Document Binding:    {result.document_binding}")
+            print(f"  Corrected Errors:    {result.corrected_errors} RS symbols")
+            print("Cryptographic Document Binding:")
+            print(f"  Binding Verified:    {'VALID (Matches Target Document)' if result.binding_valid else 'MISMATCH'}")
+        elif result.status == ExtractionStatus.AMBIGUOUS:
+            print("ALERT: Conflicting watermark signals detected across pages (possible page splice/tampering).")
+        elif result.status == ExtractionStatus.CORRUPTED:
+            print("ALERT: Watermark energy detected, but payload failed Reed-Solomon RS(32,16) ECC decoding.")
+        else:
+            print("No forensic watermark detected in document.")
+
+        print("==================================================")
+        return 0 if result.status == ExtractionStatus.DECODED else 1
+    except Exception as e:
+        print(f"Error inspecting watermark: {e}")
+        return 1
+
+
+def cmd_watermark_embed(args: argparse.Namespace) -> int:
+    try:
+        in_path = Path(args.input_file)
+        if not in_path.exists():
+            print(f"Error: Input file '{in_path}' not found.")
+            return 1
+
+        print("======================================================================")
+        print("[WARNING] RUNNING IN RESTRICTED DEVELOPMENT/TEST MODE")
+        print("[WARNING] In production, watermark embedding occurs during decryption")
+        print("[WARNING] inside the secure runtime. Never use this for production delivery.")
+        print("======================================================================")
+
+        pdf_bytes = in_path.read_bytes()
+        doc_hash = args.doc_hash or DocumentHasher.hash_bytes(pdf_bytes)
+
+        if args.watermark_id:
+            raw_wm = args.watermark_id.replace("wm-", "")
+            wm_id = WatermarkID.from_raw_hex(raw_wm)
+        else:
+            wm_id = SecureRandom.generate_typed_id(WatermarkID)
+
+        if args.session_id:
+            raw_ses = args.session_id.replace("ses-", "")
+            ses_id = SessionID.from_raw_hex(raw_ses)
+        else:
+            ses_id = SecureRandom.generate_typed_id(SessionID)
+
+        payload = WatermarkPayload.create(
+            watermark_id=wm_id,
+            session_id=ses_id,
+            source_document_hash=doc_hash,
+        )
+
+        params = WatermarkParameters(embedding_strength=args.strength)
+        print(
+            f"Embedding watermark (alpha={params.embedding_strength:.1f}, "
+            f"block={params.block_size}x{params.block_size})..."
+        )
+
+        res = WatermarkEmbedder.embed_document(
+            pdf_input=pdf_bytes,
+            payload=payload,
+            document_hash=doc_hash,
+            params=params,
+        )
+
+        out_path = Path(args.output_file) if args.output_file else Path(f"{in_path}.watermarked.pdf")
+        out_path.write_bytes(res.watermarked_pdf)
+
+        print("==================================================")
+        print("[SUCCESS] Watermark Embedded Successfully")
+        print("==================================================")
+        print(f"WatermarkID:           {payload.watermark_id}")
+        print(f"SessionID:             {payload.session_id}")
+        print(f"Document Binding:      {payload.document_binding}")
+        print(f"Source Document Hash:  {doc_hash}")
+        print(f"Pages Processed:       {res.pages_count}")
+        print(f"Fidelity PSNR:         {res.fidelity.psnr:.2f} dB (Target: >= 42.0 dB)")
+        print(f"Fidelity SSIM:         {res.fidelity.ssim:.5f} (Target: >= 0.995)")
+        print(f"Output File:           {out_path}")
+        print("==================================================")
+        return 0
+    except Exception as e:
+        print(f"Error embedding watermark: {e}")
+        return 1
+
+
+def cmd_watermark_extract(args: argparse.Namespace) -> int:
+    try:
+        p = Path(args.file)
+        if not p.exists():
+            print(f"Error: File '{p}' not found.")
+            return 1
+
+        raw_bytes = p.read_bytes()
+        doc_hash = args.doc_hash or DocumentHasher.hash_bytes(raw_bytes)
+
+        deskew = not getattr(args, "no_deskew", False)
+        print("==================================================")
+        print("TraceCrypt Blind Forensic Watermark Extraction")
+        print("==================================================")
+        print(f"Input Document:        {p}")
+        print(f"Document Hash:         {doc_hash}")
+        print(f"Deskew Search:         {'ENABLED' if deskew else 'DISABLED'}")
+        print("Extracting...")
+
+        res = WatermarkExtractor.extract_document(
+            raw_bytes,
+            document_hash=doc_hash,
+            deskew_enabled=deskew,
+        )
+
+        print("--------------------------------------------------")
+        print(f"Extraction Status:     {res.status.value}")
+        print(f"Confidence:            {res.confidence:.2%}")
+        print(f"Mean Correlation:      {res.correlation_score:.4f}")
+        print(f"Pages Analyzed:        {res.pages_analyzed}")
+        print(f"Pages Decoded:         {res.pages_decoded}")
+        print(f"Pages Corrupted:       {res.pages_corrupted}")
+        print(f"Corrected RS Errors:   {res.corrected_errors}")
+
+        if res.status == ExtractionStatus.DECODED:
+            print("--------------------------------------------------")
+            print("Extracted Cryptographic Identity:")
+            print(f"  WatermarkID:         {res.watermark_id}")
+            print(f"  SessionID:           {res.session_id}")
+            print(f"  Document Binding:    {res.document_binding}")
+            print(f"  Binding Valid:       {'VALID' if res.binding_valid else 'MISMATCH'}")
+            print(f"  Payload Consistency: {'CONSISTENT' if res.pages_decoded == res.pages_analyzed else 'PARTIAL'}")
+            print("==================================================")
+            return 0
+        else:
+            print("==================================================")
+            print(f"Result: {res.status.value}")
+            return 1
+    except Exception as e:
+        print(f"Error extracting watermark: {e}")
+        return 1
+
+
+def cmd_watermark_benchmark(args: argparse.Namespace) -> int:
+    try:
+        print("==================================================")
+        print("TraceCrypt Watermark Latency & Fidelity Benchmark")
+        print("==================================================")
+
+        if getattr(args, "input_file", None):
+            p = Path(args.input_file)
+            if not p.exists():
+                print(f"Error: Input file '{p}' not found.")
+                return 1
+            pdf_bytes = p.read_bytes()
+        else:
+            print("Generating representative 2-page test PDF document...")
+            pdf_bytes = _generate_test_pdf_bytes()
+
+        doc_hash = DocumentHasher.hash_bytes(pdf_bytes)
+        print(f"Document Size: {len(pdf_bytes)} bytes | SHA3-256: {doc_hash[:16]}...")
+        print("Running benchmark suite...")
+
+        res = WatermarkBenchmark.run_performance_benchmark(pdf_bytes, doc_hash)
+
+        print("--------------------------------------------------")
+        print(f"Pages Processed:       {res['pages_count']}")
+        print(f"PDF Rasterization:     {res['render_ms_per_page']} ms/page (Total: {res['render_ms_total']} ms)")
+        print(f"Watermark Embedding:   {res['embed_ms_per_page']} ms/page (Total: {res['embed_ms_total']} ms)")
+        print(f"Blind Extraction:      {res['extract_ms_per_page']} ms/page (Total: {res['extract_ms_total']} ms)")
+        print(f"Fidelity PSNR:         {res['fidelity']['psnr']:.2f} dB (Acceptance target: >= 42.0 dB)")
+        print(f"Fidelity SSIM:         {res['fidelity']['ssim']:.5f} (Acceptance target: >= 0.995)")
+        print(f"Latency Target <=3.5s: {'MET (PASS)' if res['meets_target_3_5s'] else 'FAILED'}")
+        print("==================================================")
+        return 0
+    except Exception as e:
+        print(f"Error running watermark benchmark: {e}")
+        return 1
+
+
+def cmd_watermark_attack_test(args: argparse.Namespace) -> int:
+    try:
+        print("==================================================")
+        print("TraceCrypt Forensic Watermark Robustness Attack Matrix")
+        print("==================================================")
+
+        if getattr(args, "input_file", None):
+            p = Path(args.input_file)
+            if not p.exists():
+                print(f"Error: Input file '{p}' not found.")
+                return 1
+            pdf_bytes = p.read_bytes()
+        else:
+            print("Generating sample test document for robustness testing...")
+            pdf_bytes = _generate_test_pdf_bytes()
+
+        doc_hash = DocumentHasher.hash_bytes(pdf_bytes)
+        params = WatermarkParameters(embedding_strength=getattr(args, "strength", 10.0))
+
+        print(f"Simulating attack matrix (strength alpha={params.embedding_strength:.1f})...")
+        attack_results = WatermarkBenchmark.run_attack_matrix(pdf_bytes, doc_hash, params=params)
+
+        hdr = f"{'ATTACK SIMULATION':<34} {'STATUS':<14} {'RAW BER':<10} {'CORRELATION':<14} {'ECC':<8} {'MATCH'}"
+        print(hdr)
+        print("-" * 88)
+        for r in attack_results:
+            ber_str = f"{r.get('raw_ber', 0.0):.2%}"
+            match_str = "[OK]" if r["payload_matched"] else "[FAIL]"
+            row = (
+                f"{r['attack']:<34} {r['status']:<14} {ber_str:<10} "
+                f"{r['correlation']:<14.4f} {r['corrected_symbols']:<8} {match_str}"
+            )
+            print(row)
+        print("-" * 88)
+        all_passed = all(r["payload_matched"] for r in attack_results)
+        print(f"Summary: {'ALL ATTACKS SURVIVED' if all_passed else 'SOME ATTACKS DEGRADED / FAILED'}")
+        return 0 if all_passed else 1
+    except Exception as e:
+        print(f"Error running attack tests: {e}")
+        return 1
+
+
 # -------------------------------------------------------------------------
 # Main Router
 # -------------------------------------------------------------------------
@@ -1039,6 +1353,19 @@ def main(args: Optional[List[str]] = None) -> int:
             return cmd_document_recipients(parsed)
         elif parsed.subcommand == "decrypt":
             return cmd_document_decrypt(parsed)
+        parser.print_help()
+        return 0
+    elif parsed.command == "watermark":
+        if parsed.subcommand == "inspect":
+            return cmd_watermark_inspect(parsed)
+        elif parsed.subcommand == "embed":
+            return cmd_watermark_embed(parsed)
+        elif parsed.subcommand == "extract":
+            return cmd_watermark_extract(parsed)
+        elif parsed.subcommand == "benchmark":
+            return cmd_watermark_benchmark(parsed)
+        elif parsed.subcommand == "attack-test":
+            return cmd_watermark_attack_test(parsed)
         parser.print_help()
         return 0
     else:

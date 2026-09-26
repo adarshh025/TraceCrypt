@@ -34,6 +34,12 @@ If you discover a potential security flaw, vulnerability, or cryptographic weakn
   * **Post-Decryption Plaintext Verification:** Decrypted plaintext is verified against the original SHA3-256 `source_document_hash`. Mismatch immediately zeroizes the buffer and fails closed.
   * **No Direct Persisted Plaintext:** Decryption returns an in-memory `SecureDocumentBuffer`; unwatermarked plaintext is never persisted to disk.
 
+* **Forensic Watermarking Security Policy:**
+  * **Transform-Domain Only:** Watermarking operates strictly in 2D Haar DWT + 8x8 block DCT frequency domain. LSB and metadata watermarking are strictly forbidden.
+  * **Zero Raw PII:** Payloads contain only 128-bit CSPRNG identifiers, truncated session tags, and cryptographic binding tokens. Raw names, emails, and phone numbers are strictly excluded.
+  * **Cryptographic Document Binding:** Watermark is cryptographically bound to the source document SHA3-256 hash via a domain-separated token. Mismatched documents fail closed.
+  * **Multi-Page Consistency:** Conflicting watermark IDs across document pages trigger `AMBIGUOUS` status. The system never arbitrarily attributes a spliced document.
+
 ## 5. Security Documentation References
 * [Post-Quantum Cryptography Specification](file:///C:/TraceCrypt/docs/security/pqc.md)
 * [Key Management & Lifecycle](file:///C:/TraceCrypt/docs/security/key-management.md)
@@ -43,4 +49,6 @@ If you discover a potential security flaw, vulnerability, or cryptographic weakn
 * [Document Content Encryption & AAD Binding](file:///C:/TraceCrypt/docs/security/document-encryption.md)
 * [Multi-Recipient Post-Quantum KEM](file:///C:/TraceCrypt/docs/security/multi-recipient-kem.md)
 * [17-Point Package Validation Pipeline](file:///C:/TraceCrypt/docs/security/package-validation.md)
+* [Forensic Watermark Security Architecture](file:///C:/TraceCrypt/docs/security/watermark-security.md)
+* [Forensic Watermark Threat Model & Limitations](file:///C:/TraceCrypt/docs/security/watermark-threats.md)
 

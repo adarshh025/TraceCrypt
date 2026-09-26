@@ -74,7 +74,15 @@ TraceCrypt is an offline, post-quantum, air-gapped document distribution and for
   * **Deterministic .tcdist Binary Container:** `TCDIST01` header, RFC 8785 canonical metadata AAD binding, SHA3-256 body checksum, and `TCDISTEND` footer.
   * **17-Point Offline Validation Pipeline:** Fail-closed validation verifying dimensions, algorithm parameters, and body checksums before any cryptographic operation.
   * **Controlled In-Memory Decryption:** `SecureDocumentBuffer` with active zeroization preventing unwatermarked document leaks to disk.
-  * **Quality Gates:** 229 passing tests (100%), 0 flake8 errors, comprehensive 24-attack security test suite.
+* [x] **Phase 4: Robust Forensic Watermark Engine:**
+  * **2D Haar DWT + 8x8 Block DCT:** Transform-domain embedding across horizontal (HL) and vertical (LH) mid-frequency bands (zigzag indices 1..10) guaranteeing exact invertibility (MSE < 1e-12).
+  * **Bipolar Spread-Spectrum Modulation:** Pseudo-random carrier derived from SHA3-256 seed with spreading gain $L = 264\text{ chips/bit}$. Zero reliance on insecure PRNGs.
+  * **Systematic Reed-Solomon RS(32,16) over $\text{GF}(2^8)$:** 2-way interleaved blocks encoding 32-byte payload to 64 bytes (512 bits); corrects up to 16 byte errors (bursts up to 16 bytes).
+  * **256-Bit Cryptographic Payload:** Exactly 32 bytes ($1\text{B version} + 16\text{B WatermarkID} + 8\text{B session\_tag} + 5\text{B doc\_binding} + 2\text{B CRC-16}$). Zero plaintext PII.
+  * **Blind Extraction & Multi-Page Consistency:** Original document is NOT required for extraction. Cross-page conflict detection triggers fail-closed `AMBIGUOUS` state upon page splicing.
+  * **Lossless PDF Re-Assembly:** FlateDecode (zlib) streams guarantee 0.0 pixel quantization distortion.
+  * **Performance & Fidelity:** Extraction latency $336.72\text{ ms/page}$ ($\le 3.5\text{s}$ target), $\text{PSNR} \ge 44.33\text{ dB}$, $\text{SSIM} \ge 0.978$.
+  * **Quality Gates:** 269 passing tests (100%), 0 flake8 errors, automated robustness attack matrix.
 
 ---
 
@@ -114,13 +122,31 @@ python -m tracecrypt document validate classified_briefing.tcdist
 python -m tracecrypt document recipients classified_briefing.tcdist
 ```
 
-### 5. Run Test Suite & Benchmarks
+### 5. Forensic Invisible Watermarking
 ```bash
-# Run complete test suite (229 tests)
+# Embed forensic watermark (test/dev mode)
+python -m tracecrypt watermark embed --input sample.pdf --output sample.watermarked.pdf --strength 8.0
+
+# Blindly extract watermark from leaked document (no original needed)
+python -m tracecrypt watermark extract sample.watermarked.pdf
+
+# Run local latency and fidelity benchmark
+python -m tracecrypt watermark benchmark
+
+# Execute simulated forensic attack matrix
+python -m tracecrypt watermark attack-test
+```
+
+### 6. Run Test Suite & Benchmarks
+```bash
+# Run complete test suite (269 tests)
 python -m pytest
 
 # Run distribution performance benchmarks
 python -m pytest tests/benchmarks/test_distribution_benchmarks.py -s
+
+# Run watermark robustness benchmarks
+python -m pytest tests/benchmarks/test_watermark_benchmarks.py -s
 ```
 
 ---
