@@ -19,6 +19,7 @@ from typing import List, Optional
 from tracecrypt.crypto.types import KeyMetadata, KeyPurpose, KeyStatus
 from tracecrypt.errors import StorageError
 from tracecrypt.event.schema import DecryptionEvent
+from tracecrypt.event.signed_event import SignedDecryptionEvent
 from tracecrypt.identity.certificate import PQCIdentityCertificate
 from tracecrypt.identity.lifecycle import RevocationRecord
 from tracecrypt.models.domain import Device, Document, User, UserRole, UserStatus
@@ -406,6 +407,41 @@ class SQLiteStorageManager:
         except Exception as e:
             raise StorageError(f"Failed to query KEM keystore path for {owner_id}: {e}") from e
 
+    def get_active_dsa_certificate(self, subject_id: str) -> Optional[PQCIdentityCertificate]:
+        """Retrieve the currently valid, unrevoked ML-DSA certificate for a subject."""
+        certs = self.list_certificates_for_subject(subject_id)
+        revocations = {r.serial_number for r in self.list_revocations()}
+        now = utc_now_micros()
+        for cert in certs:
+            if cert.key_purpose == KeyPurpose.DIGITAL_SIGNATURE:
+                if cert.serial_number in revocations:
+                    continue
+                if cert.valid_from <= now <= cert.valid_until:
+                    return cert
+        return None
+
+    def get_active_dsa_keystore_path(self, owner_id: str) -> Optional[Path]:
+        """Find the keystore file path for the active DSA key of the owner."""
+        query = """
+        SELECT keystore_path FROM key_metadata
+        WHERE owner_id = ? AND purpose = ? AND status = ?
+        ORDER BY created_at DESC;
+        """
+        try:
+            with self._get_connection() as conn:
+                cur = conn.execute(
+                    query,
+                    (owner_id, KeyPurpose.DIGITAL_SIGNATURE.value, KeyStatus.ACTIVE.value),
+                )
+                row = cur.fetchone()
+                if row and row["keystore_path"]:
+                    p = Path(row["keystore_path"])
+                    if p.exists():
+                        return p
+                return None
+        except Exception as e:
+            raise StorageError(f"Failed to query DSA keystore path for {owner_id}: {e}") from e
+
     def list_all_certificates(self) -> List[PQCIdentityCertificate]:
         query = "SELECT canonical_json FROM certificates ORDER BY valid_from DESC;"
         try:
@@ -634,3 +670,51 @@ class SQLiteStorageManager:
                 return results
         except Exception as e:
             raise StorageError(f"Failed to query events for document {document_id}: {e}") from e
+
+    def save_signed_event(self, signed_event: SignedDecryptionEvent, sync_status: str = "COMMITTED") -> None:
+        """Persist a SignedDecryptionEvent with full canonical JSON representation."""
+        query = """
+        INSERT INTO local_events (
+            event_id, document_id, recipient_id, session_id, watermark_id,
+            timestamp, canonical_json, event_digest, sync_status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(event_id) DO UPDATE SET
+            sync_status = excluded.sync_status,
+            canonical_json = excluded.canonical_json;
+        """
+        event = signed_event.event
+        raw_json = signed_event.to_canonical_json()
+        try:
+            with self._get_connection() as conn:
+                conn.execute(
+                    query,
+                    (
+                        str(event.event_id),
+                        str(event.document_id),
+                        str(event.recipient_id),
+                        str(event.session_id),
+                        str(event.watermark_id),
+                        event.timestamp,
+                        raw_json,
+                        signed_event.event_digest,
+                        sync_status,
+                    ),
+                )
+                conn.commit()
+        except Exception as e:
+            raise StorageError(f"Failed to save signed event {event.event_id}: {e}") from e
+
+    def get_signed_event(self, event_id: str) -> Optional[SignedDecryptionEvent]:
+        """Retrieve a SignedDecryptionEvent by its event_id."""
+        query = "SELECT canonical_json FROM local_events WHERE event_id = ?;"
+        try:
+            with self._get_connection() as conn:
+                cur = conn.execute(query, (event_id,))
+                row = cur.fetchone()
+                if not row:
+                    return None
+                data = json.loads(row["canonical_json"])
+                return SignedDecryptionEvent.model_validate(data)
+        except Exception as e:
+            raise StorageError(f"Failed to retrieve signed event {event_id}: {e}") from e

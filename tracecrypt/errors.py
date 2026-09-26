@@ -91,3 +91,23 @@ class PackageValidationError(SecurityError):
 class VerificationError(TraceCryptError):
     """Raised when forensic attribution verification encounters an unverifiable state."""
     pass
+
+
+class LedgerCommitRequiredError(LedgerError):
+    """Raised when document release is blocked because ledger commit was not confirmed."""
+    pass
+
+
+class ReleaseGateError(SecurityError):
+    """Raised when the centralized DocumentReleaseGate denies release of a document."""
+    pass
+
+
+class ReplayAttackError(SecurityError):
+    """Raised when a duplicate EventID, SessionID, or WatermarkID is detected."""
+    pass
+
+
+class AttributionPipelineError(TraceCryptError):
+    """Raised when recipient attribution pipeline encounters an unrecoverable failure."""
+    pass

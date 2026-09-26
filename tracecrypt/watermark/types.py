@@ -208,3 +208,21 @@ class WatermarkExtractionResult(BaseModel):
     def is_valid(self) -> bool:
         """True if the watermark was successfully decoded and verified."""
         return self.status == ExtractionStatus.DECODED and self.watermark_id is not None
+
+    def to_payload(self) -> Optional[WatermarkPayload]:
+        """Reconstruct WatermarkPayload from decoded extraction results."""
+        if not self.is_valid or not self.session_tag or not self.document_binding or not self.watermark_id:
+            return None
+        wm_bytes = bytes.fromhex(str(self.watermark_id).replace("wm-", ""))
+        ses_bytes = bytes.fromhex(self.session_tag)
+        doc_bytes = bytes.fromhex(self.document_binding)
+        ver = self.watermark_version or 1
+        pre_checksum = struct.pack(">B", ver) + wm_bytes + ses_bytes + doc_bytes
+        crc = WatermarkPayload.compute_crc16(pre_checksum)
+        return WatermarkPayload(
+            version=ver,
+            watermark_id=self.watermark_id,
+            session_tag=ses_bytes,
+            document_binding=doc_bytes,
+            checksum=crc,
+        )

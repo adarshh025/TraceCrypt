@@ -40,6 +40,14 @@ If you discover a potential security flaw, vulnerability, or cryptographic weakn
   * **Cryptographic Document Binding:** Watermark is cryptographically bound to the source document SHA3-256 hash via a domain-separated token. Mismatched documents fail closed.
   * **Multi-Page Consistency:** Conflicting watermark IDs across document pages trigger `AMBIGUOUS` status. The system never arbitrarily attributes a spliced document.
 
+* **Recipient Decryption Attribution & Release Gate Policy:**
+  * **Dynamic Ephemeral Watermarks:** Watermarks are created strictly at decryption time. Reusing a watermark across sessions or generating static watermarks during packaging/enrollment is prohibited.
+  * **Unwatermarked Release Prohibition:** Unwatermarked plaintext documents must NEVER be released to the recipient or persisted to disk.
+  * **NIST FIPS 204 ML-DSA-65 Signing:** Decryption events are signed using the recipient's private key. Roots of trust, server keys, or administrator keys must never sign recipient events.
+  * **RFC 8785 Canonical Serialization:** Events are canonicalized via RFC 8785 and hashed via SHA3-256 before signature generation. Signatures over non-canonical JSON are invalid.
+  * **Fail-Closed Release Gate:** `DocumentReleaseGate` permits release only when watermark embedding succeeds, the event signature is valid, the certificate chain is verified, and the ledger confirms final commitment.
+  * **Active Buffer Zeroization:** Raw plaintext buffers and recovered CEK are zeroized in `finally:` blocks.
+
 ## 5. Security Documentation References
 * [Post-Quantum Cryptography Specification](file:///C:/TraceCrypt/docs/security/pqc.md)
 * [Key Management & Lifecycle](file:///C:/TraceCrypt/docs/security/key-management.md)
@@ -51,4 +59,7 @@ If you discover a potential security flaw, vulnerability, or cryptographic weakn
 * [17-Point Package Validation Pipeline](file:///C:/TraceCrypt/docs/security/package-validation.md)
 * [Forensic Watermark Security Architecture](file:///C:/TraceCrypt/docs/security/watermark-security.md)
 * [Forensic Watermark Threat Model & Limitations](file:///C:/TraceCrypt/docs/security/watermark-threats.md)
+* [Attribution Boundary & Legal Semantics](file:///C:/TraceCrypt/docs/security/attribution-boundary.md)
+* [Centralized Document Release Gate](file:///C:/TraceCrypt/docs/security/release-gate.md)
+* [Post-Quantum Event Signing & Verification](file:///C:/TraceCrypt/docs/security/event-signing.md)
 

@@ -1,11 +1,15 @@
 """Forensic investigation and verification subsystem for TraceCrypt.
 
-Implementation scheduled for Phase 7:
-- Leaked document deskewing, registration, and geometric normalization
-- Blind DWT-DCT watermark extraction and Reed-Solomon decoding
-- Ledger Merkle inclusion proof and ML-DSA signature verification
+Phase 5 introduces:
+- ForensicAttributionLink: cryptographic bridge connecting extracted watermark payloads
+  to committed signed ledger events and certificate verification.
+
+Phase 7 will introduce:
+- Full automated leaked document normalization and blind extraction engine
 - Deterministic 9-state verdict engine
 - Cryptographically verifiable tamper-evident forensic reporting
 """
 
-__status__ = "DEFERRED_TO_PHASE_7"
+from tracecrypt.forensics.preparation import ForensicAttributionLink
+
+__all__ = ["ForensicAttributionLink"]

@@ -83,6 +83,16 @@ TraceCrypt is an offline, post-quantum, air-gapped document distribution and for
   * **Lossless PDF Re-Assembly:** FlateDecode (zlib) streams guarantee 0.0 pixel quantization distortion.
   * **Performance & Fidelity:** Extraction latency $336.72\text{ ms/page}$ ($\le 3.5\text{s}$ target), $\text{PSNR} \ge 44.33\text{ dB}$, $\text{SSIM} \ge 0.978$.
   * **Quality Gates:** 269 passing tests (100%), 0 flake8 errors, automated robustness attack matrix.
+* [x] **Phase 5: Recipient-Side Attribution Pipeline & Signed Decryption Events:**
+  * **Atomic Decryption Pipeline:** Strict execution order (`DECRYPT` -> `CREATE SESSION` -> `CREATE UNIQUE WATERMARK` -> `EMBED WATERMARK` -> `BUILD CANONICAL EVENT` -> `SIGN EVENT WITH RECIPIENT ML-DSA-65` -> `SUBMIT LEDGER TX` -> `CONFIRM COMMIT` -> `RELEASE GATE` -> `ZEROIZE`).
+  * **Zero Unwatermarked Plaintext Leakage:** Plaintext and recovered CEK are processed strictly in controlled memory buffers and zeroized in `finally:` blocks.
+  * **Dynamic Ephemeral Identifiers:** Cryptographically independent 128-bit `SessionID` and `WatermarkID` generated per decryption; no reuse across sessions.
+  * **RFC 8785 Canonical DecryptionEvent:** Strongly-typed model serialized deterministically with SHA3-256 event digest and Base64-encoded NIST FIPS 204 ML-DSA-65 digital signature.
+  * **Cryptographic Identity Anchor:** Decryption events are signed exclusively by the recipient's authorized private key with strict `KeyPurpose.EVENT_SIGNING` enforcement.
+  * **DecryptionEventLedger Protocol & In-Memory Adapter:** Strict ledger interface with anti-replay detection on `EventID`, `SessionID`, `WatermarkID`, and `(DocumentID, SessionID)`.
+  * **Centralized DocumentReleaseGate:** Fail-closed gate evaluating watermark integrity, event signature, certificate chain, and ledger finality (`RELEASE_ALLOWED` vs `RELEASE_DENIED`).
+  * **CLI & API Integration:** Commands for offline package validation, decryption simulation, event inspection, canonicalization, and verification.
+  * **Quality Gates:** 319 passing tests (100%), 0 flake8 errors, air-gap verified, performance benchmarked.
 
 ---
 

@@ -21,19 +21,29 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 import tracecrypt
 from tracecrypt.config.settings import get_settings
-from tracecrypt.crypto.types import MLDSAPublicKey, MLKEMPrivateKey
+from tracecrypt.crypto.types import MLDSAPrivateKey, MLDSAPublicKey, MLKEMPrivateKey
+from tracecrypt.document.attribution_pipeline import (
+    RecipientAttributionPipeline,
+    RecipientCredentials,
+)
 from tracecrypt.document.distributor import DistributionService, RecipientSpec
 from tracecrypt.document.package import DistributionPackage
 from tracecrypt.document.validator import PackageValidator
 from tracecrypt.errors import (
     CertificateValidationError,
+    LedgerCommitRequiredError,
+    ReleaseGateError,
     SecurityError,
     ValidationError,
 )
+from tracecrypt.event.signed_event import SignedDecryptionEvent
+from tracecrypt.event.verifier import DecryptionEventVerifier
 from tracecrypt.identity.certificate import CertificateValidator, PQCIdentityCertificate
 from tracecrypt.identity.keystore import EncryptedKeyContainer, KeystoreManager
 from tracecrypt.identity.lifecycle import OfflineRevocationStore
+from tracecrypt.ledger.in_memory_adapter import InMemoryLedgerAdapter
 from tracecrypt.models.domain import Document, User, UserRole, UserStatus
+from tracecrypt.watermark.types import WatermarkParameters
 from tracecrypt.security.airgap import AirGapGuard
 from tracecrypt.storage.sqlite_store import SQLiteStorageManager
 from tracecrypt.utils.identifiers import DocumentID, UserID
@@ -779,5 +789,288 @@ def create_app() -> FastAPI:
             certificate_valid=True,
             cryptographic_check_passed=crypto_passed,
         )
+
+    # -------------------------------------------------------------------------
+    # Phase 5: Recipient Attribution & Event Endpoints
+    # -------------------------------------------------------------------------
+
+    api_ledger = InMemoryLedgerAdapter()
+
+    class DecryptPrepareRequest(BaseModel):
+        package_b64: str
+        recipient_id: str
+
+    class DecryptPrepareResponse(BaseModel):
+        ready: bool
+        document_id: Optional[str] = None
+        distribution_id: Optional[str] = None
+        recipient_id: str
+        kem_certificate_valid: bool = False
+        dsa_certificate_valid: bool = False
+        error: Optional[str] = None
+
+    class DecryptExecuteRequest(BaseModel):
+        package_b64: str
+        recipient_id: str
+        kem_passphrase: str
+        dsa_passphrase: str
+        device_id: Optional[str] = None
+        watermark_strength: Optional[float] = None
+
+    class DecryptExecuteResponse(BaseModel):
+        released: bool
+        watermarked_pdf_b64: Optional[str] = None
+        event: Optional[Dict[str, Any]] = None
+        transaction_id: Optional[str] = None
+        session_id: Optional[str] = None
+        watermark_id: Optional[str] = None
+        fidelity_psnr: Optional[float] = None
+        fidelity_ssim: Optional[float] = None
+        error: Optional[str] = None
+
+    class EventVerifyRequest(BaseModel):
+        signed_event_json: str
+
+    class EventVerifyResponse(BaseModel):
+        valid: bool
+        event_id: str
+        digest_verified: bool
+        signature_verified: bool
+        certificate_verified: bool
+        document_binding_verified: bool
+        watermark_binding_verified: bool
+        errors: List[str]
+
+    @app.post(
+        "/decrypt/prepare",
+        response_model=DecryptPrepareResponse,
+        summary="Verify readiness for atomic decryption and attribution",
+    )
+    def decrypt_prepare(req: DecryptPrepareRequest) -> DecryptPrepareResponse:
+        try:
+            raw_pkg = base64.b64decode(req.package_b64, validate=True)
+            pkg = DistributionPackage.from_bytes(raw_pkg)
+            val_res = PackageValidator.validate(pkg)
+            if not val_res.valid:
+                return DecryptPrepareResponse(
+                    ready=False,
+                    recipient_id=req.recipient_id,
+                    error=f"Package invalid: {val_res.error}",
+                )
+
+            # Check recipient envelope
+            envelope_found = any(env.recipient_id == req.recipient_id for env in pkg.header.recipient_envelopes)
+            if not envelope_found:
+                return DecryptPrepareResponse(
+                    ready=False,
+                    document_id=str(pkg.header.document_id),
+                    distribution_id=str(pkg.header.distribution_id),
+                    recipient_id=req.recipient_id,
+                    error=f"Recipient '{req.recipient_id}' not authorized in package",
+                )
+
+            # Check KEM & DSA certificates
+            store = get_storage()
+            kem_cert = store.get_active_kem_certificate(req.recipient_id)
+            dsa_cert = store.get_active_dsa_certificate(req.recipient_id)
+
+            kem_ok = kem_cert is not None
+            dsa_ok = dsa_cert is not None
+
+            if not kem_ok or not dsa_ok:
+                err_msg = []
+                if not kem_ok:
+                    err_msg.append("Active KEM certificate not found")
+                if not dsa_ok:
+                    err_msg.append("Active DSA certificate not found")
+                return DecryptPrepareResponse(
+                    ready=False,
+                    document_id=str(pkg.header.document_id),
+                    distribution_id=str(pkg.header.distribution_id),
+                    recipient_id=req.recipient_id,
+                    kem_certificate_valid=kem_ok,
+                    dsa_certificate_valid=dsa_ok,
+                    error="; ".join(err_msg),
+                )
+
+            return DecryptPrepareResponse(
+                ready=True,
+                document_id=str(pkg.header.document_id),
+                distribution_id=str(pkg.header.distribution_id),
+                recipient_id=req.recipient_id,
+                kem_certificate_valid=True,
+                dsa_certificate_valid=True,
+            )
+        except Exception as e:
+            return DecryptPrepareResponse(
+                ready=False,
+                recipient_id=req.recipient_id,
+                error=f"Preparation failed: {e}",
+            )
+
+    @app.post(
+        "/decrypt/execute",
+        response_model=DecryptExecuteResponse,
+        summary="Execute atomic decryption pipeline and release watermarked document",
+    )
+    def decrypt_execute(req: DecryptExecuteRequest) -> DecryptExecuteResponse:
+        try:
+            raw_pkg = base64.b64decode(req.package_b64, validate=True)
+            store = get_storage()
+
+            # Retrieve recipient certificates
+            kem_cert = store.get_active_kem_certificate(req.recipient_id)
+            dsa_cert = store.get_active_dsa_certificate(req.recipient_id)
+            if not kem_cert or not dsa_cert:
+                raise SecurityError("Recipient active certificates (KEM or DSA) missing")
+
+            # Retrieve recipient keystores
+            kem_ks_path = store.get_active_kem_keystore_path(req.recipient_id)
+            dsa_ks_path = store.get_active_dsa_keystore_path(req.recipient_id)
+            if not kem_ks_path or not dsa_ks_path:
+                raise SecurityError("Recipient keystores (KEM or DSA) missing")
+
+            # Decrypt private keys
+            kem_container = EncryptedKeyContainer.model_validate_json(kem_ks_path.read_text(encoding="utf-8"))
+            kem_priv_bytes = KeystoreManager.decrypt_private_key(kem_container, req.kem_passphrase)
+            kem_sk = MLKEMPrivateKey(bytes(kem_priv_bytes))
+
+            dsa_container = EncryptedKeyContainer.model_validate_json(dsa_ks_path.read_text(encoding="utf-8"))
+            dsa_priv_bytes = KeystoreManager.decrypt_private_key(dsa_container, req.dsa_passphrase)
+            dsa_sk = MLDSAPrivateKey(bytes(dsa_priv_bytes))
+
+            credentials = RecipientCredentials(
+                recipient_id=req.recipient_id,
+                kem_private_key=kem_sk,
+                kem_certificate=kem_cert,
+                dsa_private_key=dsa_sk,
+                dsa_certificate=dsa_cert,
+                device_id=req.device_id,
+            )
+
+            # Root CA validation parameters
+            settings = get_settings()
+            root_cert_path = settings.storage.keys_dir / "ca_root_cert.json"
+            root_pk = None
+            rev_store = None
+            if root_cert_path.exists():
+                root_cert = PQCIdentityCertificate.from_canonical_json(
+                    root_cert_path.read_text(encoding="utf-8")
+                )
+                root_pk = MLDSAPublicKey(root_cert.get_public_key_bytes())
+                rev_store = OfflineRevocationStore(store)
+
+            wm_params = None
+            if req.watermark_strength:
+                wm_params = WatermarkParameters(embedding_strength=req.watermark_strength)
+
+            # Atomic Execution through DocumentReleaseGate
+            release = RecipientAttributionPipeline.execute_decryption(
+                package_input=raw_pkg,
+                credentials=credentials,
+                ledger=api_ledger,
+                root_ca_public_key=root_pk,
+                revocation_provider=rev_store,
+                watermark_params=wm_params,
+                device_id=req.device_id,
+            )
+
+            # Persist signed event locally
+            store.save_signed_event(release.signed_event)
+
+            return DecryptExecuteResponse(
+                released=True,
+                watermarked_pdf_b64=base64.b64encode(release.watermarked_pdf).decode("ascii"),
+                event=release.signed_event.event.model_dump(mode="json"),
+                transaction_id=release.ledger_receipt.transaction_id,
+                session_id=str(release.session_id),
+                watermark_id=str(release.watermark_id),
+                fidelity_psnr=release.fidelity.psnr,
+                fidelity_ssim=release.fidelity.ssim,
+            )
+
+        except (LedgerCommitRequiredError, ReleaseGateError) as e:
+            return DecryptExecuteResponse(
+                released=False,
+                error=f"Document release denied: {e}",
+            )
+        except Exception as e:
+            return DecryptExecuteResponse(
+                released=False,
+                error=f"Decryption failed: {e}",
+            )
+
+    @app.get(
+        "/events/{event_id}",
+        summary="Retrieve committed signed decryption event by EventID",
+    )
+    def get_event_by_id(event_id: str) -> Dict[str, Any]:
+        # Check in ledger first
+        event = api_ledger.get_event(event_id)
+        if event is None:
+            # Fallback to local SQLite store
+            store = get_storage()
+            event = store.get_signed_event(event_id)
+
+        if event is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Event '{event_id}' not found",
+            )
+        return event.model_dump(mode="json")
+
+    @app.post(
+        "/events/verify",
+        response_model=EventVerifyResponse,
+        summary="Cryptographically verify a SignedDecryptionEvent",
+    )
+    def verify_event(req: EventVerifyRequest) -> EventVerifyResponse:
+        try:
+            signed_event = SignedDecryptionEvent.from_canonical_json(req.signed_event_json)
+            store = get_storage()
+            cert = store.get_certificate(signed_event.certificate_id)
+
+            settings = get_settings()
+            root_cert_path = settings.storage.keys_dir / "ca_root_cert.json"
+            root_pk = None
+            rev_store = None
+            if root_cert_path.exists():
+                try:
+                    root_cert = PQCIdentityCertificate.from_canonical_json(
+                        root_cert_path.read_text(encoding="utf-8")
+                    )
+                    root_pk = MLDSAPublicKey(root_cert.get_public_key_bytes())
+                    rev_store = OfflineRevocationStore(store)
+                except Exception:
+                    pass
+
+            result = DecryptionEventVerifier.verify_signed_event(
+                signed_event=signed_event,
+                recipient_certificate=cert,
+                root_ca_public_key=root_pk,
+                revocation_provider=rev_store,
+            )
+
+            return EventVerifyResponse(
+                valid=result.valid,
+                event_id=str(result.event_id),
+                digest_verified=result.digest_verified,
+                signature_verified=result.signature_verified,
+                certificate_verified=result.certificate_verified,
+                document_binding_verified=result.document_binding_verified,
+                watermark_binding_verified=result.watermark_binding_verified,
+                errors=result.errors,
+            )
+        except Exception as e:
+            return EventVerifyResponse(
+                valid=False,
+                event_id="unknown",
+                digest_verified=False,
+                signature_verified=False,
+                certificate_verified=False,
+                document_binding_verified=False,
+                watermark_binding_verified=False,
+                errors=[f"Verification error: {e}"],
+            )
 
     return app

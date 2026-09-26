@@ -1,11 +1,21 @@
 """Permissioned distributed ledger subsystem for TraceCrypt.
 
-Implementation scheduled for Phase 6:
-- Multi-validator Byzantine Fault Tolerant (BFT) consensus state machine
-- Anti-replay transaction mempool with monotonic nonce validation
-- Cryptographically chained block storage with Merkle tree state roots
-- Peer-to-peer gossip over isolated air-gapped LAN
-- Merkle inclusion proof generation and verification
+Phase 5 introduces:
+- DecryptionEventLedger protocol (interface)
+- CommitStatus & LedgerTransactionReceipt models
+- InMemoryLedgerAdapter (for development and tests only)
+
+Full Byzantine Fault Tolerant (BFT) consensus, Merkle state proofs, and replicated block storage
+are scheduled for Phase 6.
 """
 
-__status__ = "DEFERRED_TO_PHASE_6"
+from tracecrypt.ledger.interface import DecryptionEventLedger
+from tracecrypt.ledger.in_memory_adapter import InMemoryLedgerAdapter
+from tracecrypt.ledger.types import CommitStatus, LedgerTransactionReceipt
+
+__all__ = [
+    "CommitStatus",
+    "LedgerTransactionReceipt",
+    "DecryptionEventLedger",
+    "InMemoryLedgerAdapter",
+]

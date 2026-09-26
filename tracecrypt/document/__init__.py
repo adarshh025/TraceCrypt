@@ -5,12 +5,22 @@ ML-KEM-768 key encapsulation, versioned binary container packaging,
 17-point offline validation, and authenticated recipient decapsulation.
 """
 
+from tracecrypt.document.attribution_pipeline import (
+    RecipientAttributionPipeline,
+    RecipientCredentials,
+    WatermarkedDocumentRelease,
+)
 from tracecrypt.document.distributor import DistributionService, RecipientSpec
 from tracecrypt.document.encryption import ContentEncryption
 from tracecrypt.document.hasher import DocumentHasher
 from tracecrypt.document.key_wrap import KeyWrapEngine
 from tracecrypt.document.package import DistributionPackage
 from tracecrypt.document.reader import DocumentReader
+from tracecrypt.document.release_gate import (
+    DocumentReleaseGate,
+    ReleaseDecision,
+    ReleaseGateResult,
+)
 from tracecrypt.document.types import (
     DistributionPackageHeader,
     PackageValidationResult,
@@ -32,4 +42,10 @@ __all__ = [
     "PackageValidator",
     "DistributionService",
     "RecipientSpec",
+    "RecipientAttributionPipeline",
+    "RecipientCredentials",
+    "WatermarkedDocumentRelease",
+    "DocumentReleaseGate",
+    "ReleaseDecision",
+    "ReleaseGateResult",
 ]

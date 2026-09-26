@@ -17,10 +17,12 @@ from __future__ import annotations
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from tracecrypt.crypto.hashing import HashAlgorithm, Hasher
 from tracecrypt.errors import ValidationError
 from tracecrypt.event.canonicalizer import canonical_hash, canonicalize
 from tracecrypt.utils.identifiers import (
     DeviceID,
+    DistributionID,
     DocumentID,
     EventID,
     RecipientID,
@@ -45,17 +47,30 @@ class DecryptionEvent(BaseModel):
     """
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    event_version: str = Field(default="1.0.0", description="Event specification version")
     schema_version: str = Field(default="1.0.0", description="Event schema specification version")
     protocol_version: str = Field(default="1.0.0", description="TraceCrypt protocol version")
+    software_version: str = Field(default="1.0.0", description="Software version that produced the event")
+    event_type: str = Field(default="DECRYPTION_ATTRIBUTION", description="Audit event type classification")
     event_id: EventID = Field(description="Unique CSPRNG event identifier")
     document_id: DocumentID = Field(description="Identifier of source document")
+    distribution_id: Optional[DistributionID] = Field(default=None, description="Distribution package identifier")
     document_hash: str = Field(description="Canonical pre-watermark SHA3-256 digest of original document")
     recipient_id: RecipientID = Field(description="Certified recipient identifier")
-    device_id: DeviceID = Field(description="Certified hardware workstation identifier")
+    recipient_key_id: Optional[str] = Field(default=None, description="Recipient ML-DSA signing key identifier")
+    recipient_certificate_id: Optional[str] = Field(
+        default=None, description="Recipient signing certificate serial number"
+    )
+    device_id: Optional[DeviceID] = Field(default=None, description="Certified hardware workstation identifier")
     session_id: SessionID = Field(description="Ephemeral decryption session identifier")
     watermark_id: WatermarkID = Field(description="128-bit identifier embedded in the forensic watermark")
+    watermark_version: int = Field(default=1, ge=1, le=255, description="Forensic watermark version embedded")
     anti_replay_nonce: str = Field(description="128-bit random CSPRNG nonce")
     timestamp: int = Field(description="POSIX microsecond UTC timestamp at decryption event creation")
+    rendered_watermarked_artifact_hash: Optional[str] = Field(
+        default=None,
+        description="SHA3-256 digest of released watermarked PDF artifact"
+    )
     pqc_algorithms: PQCAlgorithms = Field(default_factory=PQCAlgorithms)
 
     # Cryptographic signature fields (structured for Phase 2 / Phase 5 integration)
@@ -93,3 +108,7 @@ class DecryptionEvent(BaseModel):
     def compute_event_digest(self) -> str:
         """Compute the deterministic canonical SHA3-256 hash digest of this event."""
         return canonical_hash(self.to_canonical_dict())
+
+    def compute_event_digest_bytes(self) -> bytes:
+        """Compute the raw 32-byte SHA3-256 digest of the canonical event bytes."""
+        return Hasher.digest_bytes(self.to_canonical_bytes(), HashAlgorithm.SHA3_256.value).raw_bytes

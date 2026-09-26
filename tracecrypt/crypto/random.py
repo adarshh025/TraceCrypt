@@ -65,3 +65,8 @@ class SecureRandom:
     def generate_typed_id(cls, id_cls: Type[T_ID]) -> T_ID:
         """Alias for generate_id for backwards/forwards convenience."""
         return cls.generate_id(id_cls)
+
+    @classmethod
+    def generate_nonce(cls, byte_length: int = 16) -> str:
+        """Alias for random_hex for generating hex nonces."""
+        return cls.random_hex(byte_length)

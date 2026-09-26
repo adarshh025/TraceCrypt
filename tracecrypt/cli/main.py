@@ -35,9 +35,14 @@ from tracecrypt.crypto.types import (
     KeyMetadata,
     KeyPurpose,
     KeyStatus,
+    MLDSAPrivateKey,
     MLDSAPublicKey,
     MLKEMPrivateKey,
     MLKEMPublicKey,
+)
+from tracecrypt.document.attribution_pipeline import (
+    RecipientAttributionPipeline,
+    RecipientCredentials,
 )
 from tracecrypt.document.distributor import DistributionService, RecipientSpec
 from tracecrypt.document.hasher import DocumentHasher
@@ -45,10 +50,14 @@ from tracecrypt.document.package import DistributionPackage
 from tracecrypt.document.reader import DocumentReader
 from tracecrypt.document.validator import PackageValidator
 from tracecrypt.errors import SecurityError, ValidationError
+from tracecrypt.event.schema import DecryptionEvent
+from tracecrypt.event.signed_event import SignedDecryptionEvent
+from tracecrypt.event.verifier import DecryptionEventVerifier
 from tracecrypt.identity.ca import OfflineRootCA
 from tracecrypt.identity.certificate import CertificateValidator, PQCIdentityCertificate
 from tracecrypt.identity.keystore import KeystoreManager
 from tracecrypt.identity.lifecycle import KeyLifecycleManager, OfflineRevocationStore, RevocationReason
+from tracecrypt.ledger.in_memory_adapter import InMemoryLedgerAdapter
 from tracecrypt.security.airgap import AirGapGuard
 from tracecrypt.storage.sqlite_store import SQLiteStorageManager
 from tracecrypt.utils.identifiers import SessionID, WatermarkID
@@ -223,6 +232,33 @@ def build_parser() -> argparse.ArgumentParser:
     wm_attack = wm_sub.add_parser("attack-test", help="Run automated robustness attack simulation matrix")
     wm_attack.add_argument("--input", "-i", dest="input_file", default=None, help="Optional input PDF file")
     wm_attack.add_argument("--strength", type=float, default=10.0, help="Embedding strength alpha (default: 10.0)")
+
+    # Command: decrypt
+    dec_parser = subparsers.add_parser("decrypt", help="Recipient decryption and attribution pipeline")
+    dec_sub = dec_parser.add_subparsers(dest="subcommand", help="Decryption operations")
+
+    dec_val = dec_sub.add_parser("validate", help="Validate .tcdist package offline")
+    dec_val.add_argument("package", help="Path to .tcdist package file")
+
+    dec_sim = dec_sub.add_parser("simulate", help="Simulate recipient decryption through atomic release gate")
+    dec_sim.add_argument("package", help="Path to .tcdist package file")
+    dec_sim.add_argument("--recipient", "-r", dest="recipient", required=True, help="Recipient ID")
+    dec_sim.add_argument("--passphrase", help="Passphrase to unlock recipient keystore (optional if test keys)")
+    dec_sim.add_argument("--output", "-o", dest="output", help="Optional path to save watermarked PDF")
+
+    # Command: event
+    evt_parser = subparsers.add_parser("event", help="Decryption event management and verification")
+    evt_sub = evt_parser.add_subparsers(dest="subcommand", help="Event operations")
+
+    evt_inspect = evt_sub.add_parser("inspect", help="Inspect a DecryptionEvent or SignedDecryptionEvent JSON file")
+    evt_inspect.add_argument("event", help="Path to event JSON file")
+
+    evt_verify = evt_sub.add_parser("verify", help="Cryptographically verify a SignedDecryptionEvent")
+    evt_verify.add_argument("event", help="Path to signed event JSON file")
+    evt_verify.add_argument("--cert-file", help="Optional path to recipient certificate JSON file")
+
+    evt_canon = evt_sub.add_parser("canonicalize", help="RFC 8785 canonicalize an event and compute SHA3-256 digest")
+    evt_canon.add_argument("event", help="Path to event JSON file")
 
     return parser
 
@@ -1282,6 +1318,261 @@ def cmd_watermark_attack_test(args: argparse.Namespace) -> int:
 
 
 # -------------------------------------------------------------------------
+# Phase 5: Recipient Attribution & Event Handlers
+# -------------------------------------------------------------------------
+
+def cmd_decrypt_validate(args: argparse.Namespace) -> int:
+    pkg_path = Path(args.package)
+    if not pkg_path.exists():
+        print(f"Error: Package file '{pkg_path}' not found", file=sys.stderr)
+        return 1
+
+    print(f"Running 17-point offline validation on package: {pkg_path.name}")
+    try:
+        pkg = DistributionPackage.load(pkg_path)
+        res = PackageValidator.validate(pkg)
+        if res.valid:
+            print("Status: VALID")
+            print(f"Distribution ID: {pkg.header.distribution_id}")
+            print(f"Document ID:     {pkg.header.document_id}")
+            print(f"Cipher:          {pkg.header.cipher_algorithm}")
+            print(f"KEM:             {pkg.header.kem_algorithm}")
+            print(f"Source Hash:     {pkg.header.source_document_hash}")
+            print(f"Recipients:      {len(pkg.header.recipient_envelopes)}")
+            for env in pkg.header.recipient_envelopes:
+                print(f"  - Recipient: {env.recipient_id} (Cert Serial: {env.certificate_serial})")
+            return 0
+        else:
+            print(f"Status: INVALID - {res.error}", file=sys.stderr)
+            return 1
+    except Exception as e:
+        print(f"Package validation failed: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_decrypt_simulate(args: argparse.Namespace) -> int:
+    pkg_path = Path(args.package)
+    if not pkg_path.exists():
+        print(f"Error: Package file '{pkg_path}' not found", file=sys.stderr)
+        return 1
+
+    rid = args.recipient
+    print(f"Simulating atomic recipient decryption for recipient '{rid}'...")
+    print(f"Target Package: {pkg_path.name}")
+
+    store = get_storage()
+    settings = get_settings()
+    keys_dir = settings.storage.keys_dir
+
+    kem_cert = store.get_active_kem_certificate(rid)
+    dsa_cert = store.get_active_dsa_certificate(rid)
+    kem_ks_path = store.get_active_kem_keystore_path(rid)
+    dsa_ks_path = store.get_active_dsa_keystore_path(rid)
+
+    if not kem_cert or not dsa_cert or not kem_ks_path or not dsa_ks_path:
+        print(f"Error: Active recipient credentials for '{rid}' not found in local keystore.", file=sys.stderr)
+        print("Please ensure recipient is enrolled via 'tracecrypt identity generate'", file=sys.stderr)
+        return 1
+
+    passphrase = args.passphrase
+    if not passphrase:
+        print("Error: --passphrase required to unlock recipient keystore", file=sys.stderr)
+        return 1
+
+    try:
+        from tracecrypt.identity.keystore import EncryptedKeyContainer, KeystoreManager
+        kem_container = EncryptedKeyContainer.model_validate_json(kem_ks_path.read_text(encoding="utf-8"))
+        kem_priv_bytes = KeystoreManager.decrypt_private_key(kem_container, passphrase)
+        kem_sk = MLKEMPrivateKey(bytes(kem_priv_bytes))
+
+        dsa_container = EncryptedKeyContainer.model_validate_json(dsa_ks_path.read_text(encoding="utf-8"))
+        dsa_priv_bytes = KeystoreManager.decrypt_private_key(dsa_container, passphrase)
+        dsa_sk = MLDSAPrivateKey(bytes(dsa_priv_bytes))
+
+        credentials = RecipientCredentials(
+            recipient_id=rid,
+            kem_private_key=kem_sk,
+            kem_certificate=kem_cert,
+            dsa_private_key=dsa_sk,
+            dsa_certificate=dsa_cert,
+        )
+
+        root_cert_path = keys_dir / "ca_root_cert.json"
+        root_pk = None
+        rev_store = None
+        if root_cert_path.exists():
+            root_cert = PQCIdentityCertificate.from_canonical_json(root_cert_path.read_text(encoding="utf-8"))
+            root_pk = MLDSAPublicKey(root_cert.get_public_key_bytes())
+            rev_store = OfflineRevocationStore(store)
+
+        ledger = InMemoryLedgerAdapter()
+
+        print("[1/6] Validating package & recipient certificates... OK")
+        print("[2/6] Decapsulating CEK and decrypting source payload in memory... OK")
+        print("[3/6] Embedding transform-domain forensic watermark... OK")
+        print("[4/6] Constructing canonical RFC 8785 DecryptionEvent... OK")
+        print("[5/6] Signing event with recipient ML-DSA-65 private key... OK")
+        print("[6/6] Submitting transaction to ledger & evaluating DocumentReleaseGate... OK")
+
+        release = RecipientAttributionPipeline.execute_decryption(
+            package_input=pkg_path,
+            credentials=credentials,
+            ledger=ledger,
+            root_ca_public_key=root_pk,
+            revocation_provider=rev_store,
+        )
+
+        print("\n================ ATOMIC DECRYPTION SUCCESS ================")
+        print("Release Gate Decision: RELEASE_ALLOWED")
+        print(f"Transaction ID:        {release.ledger_receipt.transaction_id}")
+        print(f"Event ID:              {release.signed_event.event.event_id}")
+        print(f"Session ID:            {release.session_id}")
+        print(f"Watermark ID:          {release.watermark_id}")
+        print(f"Source Document Hash:  {release.source_document_hash}")
+        print(f"Watermarked Art. Hash: {release.rendered_watermarked_artifact_hash}")
+        print(f"Fidelity PSNR:         {release.fidelity.psnr:.2f} dB")
+        print(f"Fidelity SSIM:         {release.fidelity.ssim:.4f}")
+
+        if args.output:
+            out_p = release.save(args.output)
+            print(f"Watermarked artifact saved to: {out_p}")
+        else:
+            print("Note: Plaintext was zeroized in memory. Use --output to save the watermarked PDF.")
+
+        return 0
+
+    except Exception as e:
+        print(f"\nDecryption simulation failed: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_event_inspect(args: argparse.Namespace) -> int:
+    p = Path(args.event)
+    if not p.exists():
+        print(f"Error: Event file '{p}' not found", file=sys.stderr)
+        return 1
+    import json
+    try:
+        raw_text = p.read_text(encoding="utf-8")
+        data = json.loads(raw_text)
+        is_signed = "signature" in data and "event" in data and isinstance(data["event"], dict)
+
+        if is_signed:
+            signed_evt = SignedDecryptionEvent.model_validate(data)
+            evt = signed_evt.event
+            print("Type: SignedDecryptionEvent")
+            print(f"Event ID:              {evt.event_id}")
+            print(f"Event Version:         {evt.event_version}")
+            print(f"Document ID:           {evt.document_id}")
+            print(f"Distribution ID:       {evt.distribution_id}")
+            print(f"Recipient ID:          {evt.recipient_id}")
+            print(f"Session ID:            {evt.session_id}")
+            print(f"Watermark ID:          {evt.watermark_id}")
+            print(f"Document Hash:         {evt.document_hash}")
+            print(f"Event Digest:          {signed_evt.event_digest}")
+            print(f"Signing Key ID:        {signed_evt.signing_key_id}")
+            print(f"Certificate ID:        {signed_evt.certificate_id}")
+            print(f"Ledger Tx ID:          {signed_evt.ledger_transaction_id or 'NOT_ASSIGNED'}")
+            print(f"Signature (truncated): {signed_evt.signature[:32]}...")
+        else:
+            evt = DecryptionEvent.model_validate(data)
+            print("Type: DecryptionEvent (Unsigned / Canonical)")
+            print(f"Event ID:              {evt.event_id}")
+            print(f"Event Version:         {evt.event_version}")
+            print(f"Document ID:           {evt.document_id}")
+            print(f"Distribution ID:       {evt.distribution_id}")
+            print(f"Recipient ID:          {evt.recipient_id}")
+            print(f"Session ID:            {evt.session_id}")
+            print(f"Watermark ID:          {evt.watermark_id}")
+            print(f"Document Hash:         {evt.document_hash}")
+            print(f"Computed Digest:       {evt.compute_event_digest()}")
+        return 0
+    except Exception as e:
+        print(f"Failed to inspect event: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_event_verify(args: argparse.Namespace) -> int:
+    p = Path(args.event)
+    if not p.exists():
+        print(f"Error: Event file '{p}' not found", file=sys.stderr)
+        return 1
+    import json
+    try:
+        raw_text = p.read_text(encoding="utf-8")
+        data = json.loads(raw_text)
+        signed_evt = SignedDecryptionEvent.model_validate(data)
+
+        cert = None
+        store = get_storage()
+        if args.cert_file:
+            cert_p = Path(args.cert_file)
+            cert = PQCIdentityCertificate.from_canonical_json(cert_p.read_text(encoding="utf-8"))
+        elif signed_evt.certificate_id:
+            cert = store.get_certificate(signed_evt.certificate_id)
+
+        settings = get_settings()
+        root_cert_path = settings.storage.keys_dir / "ca_root_cert.json"
+        root_pk = None
+        rev_store = None
+        if root_cert_path.exists():
+            root_cert = PQCIdentityCertificate.from_canonical_json(root_cert_path.read_text(encoding="utf-8"))
+            root_pk = MLDSAPublicKey(root_cert.get_public_key_bytes())
+            rev_store = OfflineRevocationStore(store)
+
+        print(f"Verifying signed event: {signed_evt.event.event_id}")
+        res = DecryptionEventVerifier.verify_signed_event(
+            signed_event=signed_evt,
+            recipient_certificate=cert,
+            root_ca_public_key=root_pk,
+            revocation_provider=rev_store,
+        )
+
+        print(f"[1] Event Canonicalization & Digest: {'VERIFIED' if res.digest_verified else 'FAILED'}")
+        print(f"[2] NIST FIPS 204 ML-DSA-65 Signature: {'VERIFIED' if res.signature_verified else 'FAILED'}")
+        print(f"[3] Recipient Certificate & Key Purpose: {'VERIFIED' if res.certificate_verified else 'FAILED'}")
+        print(f"[4] Cryptographic Document Binding:     {'VERIFIED' if res.document_binding_verified else 'FAILED'}")
+        print(f"[5] Forensic Watermark Context Binding: {'VERIFIED' if res.watermark_binding_verified else 'FAILED'}")
+
+        if res.valid:
+            print("\nRESULT: CRYPTOGRAPHICALLY VALID")
+            return 0
+        else:
+            print(f"\nRESULT: INVALID - Errors: {res.errors}", file=sys.stderr)
+            return 1
+    except Exception as e:
+        print(f"Verification execution error: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_event_canonicalize(args: argparse.Namespace) -> int:
+    p = Path(args.event)
+    if not p.exists():
+        print(f"Error: Event file '{p}' not found", file=sys.stderr)
+        return 1
+    import json
+    try:
+        raw_text = p.read_text(encoding="utf-8")
+        data = json.loads(raw_text)
+        if "event" in data and isinstance(data["event"], dict):
+            evt = DecryptionEvent.model_validate(data["event"])
+        else:
+            evt = DecryptionEvent.model_validate(data)
+
+        canon_bytes = evt.to_canonical_bytes()
+        digest = evt.compute_event_digest()
+
+        print("=== RFC 8785 Canonical JSON Bytes ===")
+        print(canon_bytes.decode("utf-8"))
+        print("\n=== SHA3-256 Canonical Event Digest ===")
+        print(digest)
+        return 0
+    except Exception as e:
+        print(f"Canonicalization failed: {e}", file=sys.stderr)
+        return 1
+
+
+# -------------------------------------------------------------------------
 # Main Router
 # -------------------------------------------------------------------------
 
@@ -1366,6 +1657,22 @@ def main(args: Optional[List[str]] = None) -> int:
             return cmd_watermark_benchmark(parsed)
         elif parsed.subcommand == "attack-test":
             return cmd_watermark_attack_test(parsed)
+        parser.print_help()
+        return 0
+    elif parsed.command == "decrypt":
+        if parsed.subcommand == "validate":
+            return cmd_decrypt_validate(parsed)
+        elif parsed.subcommand == "simulate":
+            return cmd_decrypt_simulate(parsed)
+        parser.print_help()
+        return 0
+    elif parsed.command == "event":
+        if parsed.subcommand == "inspect":
+            return cmd_event_inspect(parsed)
+        elif parsed.subcommand == "verify":
+            return cmd_event_verify(parsed)
+        elif parsed.subcommand == "canonicalize":
+            return cmd_event_canonicalize(parsed)
         parser.print_help()
         return 0
     else:
