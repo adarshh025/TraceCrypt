@@ -103,6 +103,7 @@ class CertificateValidator:
         root_ca_public_key: MLDSAPublicKey,
         revocation_provider: Optional[RevocationProvider] = None,
         current_time_micros: Optional[int] = None,
+        expected_purpose: Optional[KeyPurpose] = None,
     ) -> None:
         """Execute the mandatory 12 offline verification checks.
 
@@ -188,6 +189,11 @@ class CertificateValidator:
             raise ValidationError("Check 9 Failed: Certificate duration is non-positive.")
 
         # 10. Key Purpose
+        if expected_purpose is not None and certificate.key_purpose != expected_purpose:
+            raise SecurityError(
+                f"Check 10 Failed: Certificate key purpose '{certificate.key_purpose.value}' "
+                f"does not match expected purpose '{expected_purpose.value}'."
+            )
         if certificate.algorithm == "ML-DSA-65" and certificate.key_purpose != KeyPurpose.DIGITAL_SIGNATURE:
             raise ValidationError("Check 10 Failed: ML-DSA-65 key must have DIGITAL_SIGNATURE purpose.")
         if certificate.algorithm == "ML-KEM-768" and certificate.key_purpose != KeyPurpose.KEY_ENCAPSULATION:

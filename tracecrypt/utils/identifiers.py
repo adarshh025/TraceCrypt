@@ -75,6 +75,12 @@ class DocumentID(BaseID):
     PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"^doc-[a-f0-9]{32}$")
 
 
+class DistributionID(BaseID):
+    """Unique identifier for an encrypted document distribution package."""
+    PREFIX: ClassVar[str] = "dst-"
+    PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"^dst-[a-f0-9]{32}$")
+
+
 class UserID(BaseID):
     """Unique identifier for an authorized system user."""
     PREFIX: ClassVar[str] = "usr-"

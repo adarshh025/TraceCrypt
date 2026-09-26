@@ -36,8 +36,14 @@ from tracecrypt.crypto.types import (
     KeyPurpose,
     KeyStatus,
     MLDSAPublicKey,
+    MLKEMPrivateKey,
     MLKEMPublicKey,
 )
+from tracecrypt.document.distributor import DistributionService, RecipientSpec
+from tracecrypt.document.hasher import DocumentHasher
+from tracecrypt.document.package import DistributionPackage
+from tracecrypt.document.reader import DocumentReader
+from tracecrypt.document.validator import PackageValidator
 from tracecrypt.errors import SecurityError, ValidationError
 from tracecrypt.identity.ca import OfflineRootCA
 from tracecrypt.identity.certificate import CertificateValidator, PQCIdentityCertificate
@@ -132,6 +138,54 @@ def build_parser() -> argparse.ArgumentParser:
     fp_key.add_argument("--type", choices=["kem", "dsa"], default=None, help="Key type (kem or dsa)")
     fp_key.add_argument("--b64", default=None, help="Base64-encoded public key")
     fp_key.add_argument("--key-file", default=None, help="Path to public key binary or certificate JSON file")
+
+    # Command: document
+    doc_parser = subparsers.add_parser("document", help="Encrypted document distribution and packaging")
+    doc_sub = doc_parser.add_subparsers(dest="subcommand", help="Document operations")
+
+    doc_inspect = doc_sub.add_parser("inspect", help="Inspect source document or .tcdist package")
+    doc_inspect.add_argument("file", help="Path to document or .tcdist package")
+
+    doc_hash = doc_sub.add_parser("hash", help="Calculate SHA3-256 integrity hash of document")
+    doc_hash.add_argument("file", help="Path to document file")
+
+    doc_pkg = doc_sub.add_parser("package", help="Create encrypted .tcdist distribution package")
+    doc_pkg.add_argument("--input", "-i", dest="input_file", required=True, help="Path to source document (e.g. PDF)")
+    doc_pkg.add_argument(
+        "--output", "-o", dest="output_file", default=None,
+        help="Path to output .tcdist file (defaults to <input>.tcdist)",
+    )
+    doc_pkg.add_argument(
+        "--recipient", "-r", dest="recipients", action="append", default=[],
+        help="Recipient user/subject ID (can be repeated)",
+    )
+    doc_pkg.add_argument(
+        "--recipient-cert", dest="recipient_certs", action="append", default=[],
+        help="Path to recipient certificate JSON file (can be repeated)",
+    )
+
+    doc_val = doc_sub.add_parser("validate", help="Run 17-point offline validation on .tcdist package")
+    doc_val.add_argument("package", help="Path to .tcdist package file")
+
+    doc_rcp = doc_sub.add_parser("recipients", help="List authorized recipient envelopes in .tcdist package")
+    doc_rcp.add_argument("package", help="Path to .tcdist package file")
+
+    doc_dec = doc_sub.add_parser("decrypt", help="Decrypt .tcdist package (restricted to test/dev mode)")
+    doc_dec.add_argument("package", help="Path to .tcdist package file")
+    doc_dec.add_argument("--recipient-id", required=True, help="Recipient ID attempting decryption")
+    doc_dec.add_argument("--passphrase", required=True, help="Passphrase to unlock recipient's KEM private keystore")
+    doc_dec.add_argument(
+        "--keystore", default=None,
+        help="Path to recipient encrypted keystore JSON (or resolved from storage)",
+    )
+    doc_dec.add_argument(
+        "--output", "-o", dest="output_file", default=None,
+        help="Optional output path for decrypted plaintext (requires --dev-mode)",
+    )
+    doc_dec.add_argument(
+        "--dev-mode", action="store_true",
+        help="Explicit confirmation of restricted developer/test mode",
+    )
 
     return parser
 
@@ -600,6 +654,319 @@ def cmd_key_fingerprint(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_document_inspect(args: argparse.Namespace) -> int:
+    try:
+        p = Path(args.file)
+        if not p.exists():
+            print(f"Error: File '{p}' not found.")
+            return 1
+
+        raw = p.read_bytes()
+        if raw.startswith(b"TCDIST01"):
+            pkg = DistributionPackage.deserialize(raw)
+            h = pkg.header
+            print("==================================================")
+            print("TraceCrypt Distribution Package (.tcdist)")
+            print("==================================================")
+            print(f"Format Version:          {h.format_version}")
+            print(f"Distribution ID:         {h.distribution_id}")
+            print(f"Document ID:             {h.document_id}")
+            print(f"Original Filename:       {h.filename}")
+            print(f"MIME Type:               {h.mime_type}")
+            print(f"Source Document Hash:    {h.source_document_hash}")
+            print(f"Source Size:             {h.source_size_bytes} bytes")
+            print(f"Package Size:            {len(raw)} bytes")
+            print(f"Created At:              {h.created_at}")
+            print(f"Content Cipher:          {h.cipher_algorithm}")
+            print(f"KEM Algorithm:           {h.kem_algorithm}")
+            print(f"Recipient Count:         {len(h.recipients)}")
+            print("--------------------------------------------------")
+            for i, r in enumerate(h.recipients, 1):
+                print(f"  [{i}] Recipient ID:   {r.recipient_id}")
+                print(f"      Key Fingerprint: {r.key_fingerprint}")
+                print(f"      Cert Serial:     {r.certificate_serial}")
+            print("==================================================")
+            return 0
+        else:
+            doc_bytes, mime_type, filename = DocumentReader.read_document(p)
+            doc_hash = DocumentHasher.hash_bytes(doc_bytes)
+            print("==================================================")
+            print("Source Document Inspection")
+            print("==================================================")
+            print(f"Filename:             {filename}")
+            print(f"MIME Type:            {mime_type}")
+            print(f"Size:                 {len(doc_bytes)} bytes")
+            print(f"SHA3-256 Hash:        {doc_hash}")
+            print("==================================================")
+            return 0
+    except Exception as e:
+        print(f"Error inspecting document: {e}")
+        return 1
+
+
+def cmd_document_hash(args: argparse.Namespace) -> int:
+    try:
+        p = Path(args.file)
+        if not p.exists():
+            print(f"Error: File '{p}' not found.")
+            return 1
+        digest = DocumentHasher.hash_file(p)
+        print("Algorithm: SHA3-256")
+        print(f"File:      {p}")
+        print(f"Digest:    {digest}")
+        return 0
+    except Exception as e:
+        print(f"Error hashing document: {e}")
+        return 1
+
+
+def cmd_document_package(args: argparse.Namespace) -> int:
+    try:
+        in_path = Path(args.input_file)
+        if not in_path.exists():
+            print(f"Error: Input file '{in_path}' not found.")
+            return 1
+
+        store = get_storage()
+        settings = get_settings()
+        keys_dir = settings.storage.keys_dir
+
+        recipient_specs: List[RecipientSpec] = []
+
+        # From --recipient-cert paths
+        for cert_file in getattr(args, "recipient_certs", []) or []:
+            cp = Path(cert_file)
+            if not cp.exists():
+                print(f"Error: Recipient certificate file '{cp}' not found.")
+                return 1
+            cert = PQCIdentityCertificate.from_canonical_json(
+                cp.read_text(encoding="utf-8")
+            )
+            recipient_specs.append(RecipientSpec(cert))
+
+        # From --recipient IDs
+        for rcp_id in getattr(args, "recipients", []) or []:
+            cert = store.get_active_kem_certificate(rcp_id)
+            if not cert:
+                fallback_path = keys_dir / f"{rcp_id}_kem_cert.json"
+                if fallback_path.exists():
+                    cert = PQCIdentityCertificate.from_canonical_json(
+                        fallback_path.read_text(encoding="utf-8")
+                    )
+            if not cert:
+                print(f"Error: Active KEM certificate for recipient '{rcp_id}' not found.")
+                return 1
+            recipient_specs.append(RecipientSpec(cert))
+
+        if not recipient_specs:
+            print("Error: At least one recipient (--recipient or --recipient-cert) must be specified.")
+            return 1
+
+        seen = set()
+        deduped = []
+        for r in recipient_specs:
+            if r.certificate.subject_id in seen:
+                continue
+            seen.add(r.certificate.subject_id)
+            deduped.append(r)
+        recipient_specs = deduped
+
+        pkg, _ = DistributionService.create_package(
+            input_path=in_path,
+            recipients=recipient_specs,
+        )
+
+        out_path = Path(args.output_file) if args.output_file else Path(f"{in_path}.tcdist")
+        pkg_bytes = DistributionPackage.serialize(pkg)
+        out_path.write_bytes(pkg_bytes)
+
+        print("==================================================")
+        print("[SUCCESS] Created TraceCrypt Distribution Package")
+        print("==================================================")
+        print(f"Distribution ID:       {pkg.header.distribution_id}")
+        print(f"Document ID:           {pkg.header.document_id}")
+        print(f"Source Hash:           {pkg.header.source_document_hash}")
+        print(f"Authorized Recipients: {len(recipient_specs)}")
+        print(f"Package Size:          {len(pkg_bytes)} bytes")
+        print(f"Output File:           {out_path}")
+        print("==================================================")
+        return 0
+    except Exception as e:
+        print(f"Error creating package: {e}")
+        return 1
+
+
+def cmd_document_validate(args: argparse.Namespace) -> int:
+    try:
+        p = Path(args.package)
+        if not p.exists():
+            print(f"Error: Package file '{p}' not found.")
+            return 1
+
+        pkg_bytes = p.read_bytes()
+        settings = get_settings()
+        root_cert_path = settings.storage.keys_dir / "ca_root_cert.json"
+        root_pk = None
+        rev_store = None
+
+        if root_cert_path.exists():
+            try:
+                root_cert = PQCIdentityCertificate.from_canonical_json(
+                    root_cert_path.read_text(encoding="utf-8")
+                )
+                root_pk = MLDSAPublicKey(root_cert.get_public_key_bytes())
+                store = get_storage()
+                rev_store = OfflineRevocationStore(store)
+            except Exception:
+                pass
+
+        result = PackageValidator.validate_package(
+            package_bytes=pkg_bytes,
+            root_ca_public_key=root_pk,
+            revocation_provider=rev_store,
+        )
+
+        if result.valid:
+            print("==================================================")
+            print("[PASS] Package is cryptographically valid and untampered.")
+            print("==================================================")
+            if result.header:
+                print(f"Distribution ID:       {result.header.distribution_id}")
+                print(f"Document ID:           {result.header.document_id}")
+                print(f"Source Hash:           {result.header.source_document_hash}")
+                print(f"Recipients:            {len(result.header.recipients)}")
+            return 0
+        else:
+            print("==================================================")
+            print("[FAIL] Package validation failed:")
+            print("==================================================")
+            for err in result.errors:
+                print(f"  - {err}")
+            return 1
+    except Exception as e:
+        print(f"Error validating package: {e}")
+        return 1
+
+
+def cmd_document_recipients(args: argparse.Namespace) -> int:
+    try:
+        p = Path(args.package)
+        if not p.exists():
+            print(f"Error: Package file '{p}' not found.")
+            return 1
+
+        pkg = DistributionPackage.deserialize(p.read_bytes())
+        h = pkg.header
+        print("==================================================")
+        print(f"Authorized Recipients for Package {h.distribution_id}")
+        print("==================================================")
+        print(f"Document ID:      {h.document_id}")
+        print(f"Total Envelopes:  {len(h.recipients)}")
+        print("--------------------------------------------------")
+        for i, r in enumerate(h.recipients, 1):
+            print(f"[{i}] Recipient ID:    {r.recipient_id}")
+            print(f"    Key ID:          {r.key_id}")
+            print(f"    Key Fingerprint: {r.key_fingerprint}")
+            print(f"    Cert Serial:     {r.certificate_serial}")
+            print(f"    Algorithm:       {r.mlkem_algorithm} ({r.mlkem_parameter_set})")
+            print(f"    Encapsulated CT: {len(r.encapsulated_key_b64)} b64 chars")
+            print(f"    Wrapped CEK:     {len(r.encrypted_cek_b64)} b64 chars")
+        print("==================================================")
+        return 0
+    except Exception as e:
+        print(f"Error reading package recipients: {e}")
+        return 1
+
+
+def cmd_document_decrypt(args: argparse.Namespace) -> int:
+    try:
+        if not getattr(args, "dev_mode", False):
+            print("======================================================================")
+            print("ERROR: Direct CLI decryption without forensic pipeline is restricted")
+            print("to development and testing. Pass --dev-mode to proceed in test mode.")
+            print("In production, decryption requires forensic watermarking and ledger commit.")
+            print("======================================================================")
+            return 1
+
+        print("======================================================================")
+        print("[WARNING] RUNNING IN RESTRICTED DEVELOPMENT/TEST MODE")
+        print("[WARNING] Forensic watermarking and ledger commit pipeline are bypassed.")
+        print("[WARNING] Plaintext document will be decrypted in memory.")
+        print("[WARNING] NEVER USE THIS COMMAND IN PRODUCTION AIR-GAPPED DEPLOYMENTS.")
+        print("======================================================================")
+
+        p = Path(args.package)
+        if not p.exists():
+            print(f"Error: Package file '{p}' not found.")
+            return 1
+
+        store = get_storage()
+        settings = get_settings()
+        keys_dir = settings.storage.keys_dir
+
+        keystore_path = None
+        if getattr(args, "keystore", None):
+            keystore_path = Path(args.keystore)
+        else:
+            keystore_path = store.get_active_kem_keystore_path(args.recipient_id)
+            if not keystore_path or not keystore_path.exists():
+                cand = keys_dir / f"{args.recipient_id}_kem_keystore.json"
+                if cand.exists():
+                    keystore_path = cand
+
+        if not keystore_path or not keystore_path.exists():
+            print(f"Error: Keystore for recipient '{args.recipient_id}' not found.")
+            return 1
+
+        container = KeystoreManager.load_container(keystore_path)
+        priv_bytes = KeystoreManager.decrypt_private_key(container, args.passphrase)
+        recipient_priv = MLKEMPrivateKey(bytes(priv_bytes))
+
+        cert = store.get_active_kem_certificate(args.recipient_id)
+        if not cert:
+            cert_file = keys_dir / f"{args.recipient_id}_kem_cert.json"
+            if cert_file.exists():
+                cert = PQCIdentityCertificate.from_canonical_json(
+                    cert_file.read_text(encoding="utf-8")
+                )
+
+        if not cert:
+            print(f"Error: Certificate for recipient '{args.recipient_id}' not found.")
+            return 1
+
+        root_cert_path = keys_dir / "ca_root_cert.json"
+        root_pk = None
+        rev_store = None
+        if root_cert_path.exists():
+            root_cert = PQCIdentityCertificate.from_canonical_json(
+                root_cert_path.read_text(encoding="utf-8")
+            )
+            root_pk = MLDSAPublicKey(root_cert.get_public_key_bytes())
+            rev_store = OfflineRevocationStore(store)
+
+        pkg_bytes = p.read_bytes()
+        with DistributionService.decrypt_package(
+            package_bytes=pkg_bytes,
+            recipient_id=args.recipient_id,
+            recipient_private_key=recipient_priv,
+            recipient_certificate=cert,
+            root_ca_public_key=root_pk,
+            revocation_provider=rev_store,
+        ) as buf:
+            print("[SUCCESS] Cryptographic decryption and SHA3-256 verification SUCCEEDED.")
+            print(f"Decrypted payload size: {len(buf)} bytes.")
+            if getattr(args, "output_file", None):
+                out = Path(args.output_file)
+                out.write_bytes(bytes(buf))
+                print(f"[CAUTION] Plaintext saved to: {out} (unwatermarked test copy).")
+            else:
+                print("Secure buffer zeroized in memory. Plaintext was not persisted to disk.")
+        return 0
+    except Exception as e:
+        print(f"Decryption failed: {e}")
+        return 1
+
+
 # -------------------------------------------------------------------------
 # Main Router
 # -------------------------------------------------------------------------
@@ -657,6 +1024,21 @@ def main(args: Optional[List[str]] = None) -> int:
     elif parsed.command == "key":
         if parsed.subcommand == "fingerprint":
             return cmd_key_fingerprint(parsed)
+        parser.print_help()
+        return 0
+    elif parsed.command == "document":
+        if parsed.subcommand == "inspect":
+            return cmd_document_inspect(parsed)
+        elif parsed.subcommand == "hash":
+            return cmd_document_hash(parsed)
+        elif parsed.subcommand == "package":
+            return cmd_document_package(parsed)
+        elif parsed.subcommand == "validate":
+            return cmd_document_validate(parsed)
+        elif parsed.subcommand == "recipients":
+            return cmd_document_recipients(parsed)
+        elif parsed.subcommand == "decrypt":
+            return cmd_document_decrypt(parsed)
         parser.print_help()
         return 0
     else:

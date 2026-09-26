@@ -192,6 +192,10 @@ class OfflineRevocationStore:
         """Alias for register_revocation."""
         self.register_revocation(record)
 
+    def add_revocation(self, record: RevocationRecord) -> None:
+        """Alias for register_revocation."""
+        self.register_revocation(record)
+
     def is_serial_revoked(self, serial_number: str) -> bool:
         """Check if certificate serial has been revoked."""
         if serial_number in self._revoked_serials:

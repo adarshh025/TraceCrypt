@@ -1,11 +1,35 @@
-"""Document processing and distribution packaging subsystem for TraceCrypt.
+"""Encrypted document distribution subsystem (.tcdist) for TraceCrypt.
 
-Implementation scheduled for Phase 3:
-- PDF structural parsing (PyMuPDF / pdfminer)
-- Multi-layer rasterization and vector extraction (300 DPI)
-- AES-256-GCM envelope encryption
-- Multi-recipient ML-KEM key encapsulation
-- Encrypted distribution package format (.tcdist)
+Provides single-pass AES-256-GCM content encryption, multi-recipient
+ML-KEM-768 key encapsulation, versioned binary container packaging,
+17-point offline validation, and authenticated recipient decapsulation.
 """
 
-__status__ = "DEFERRED_TO_PHASE_3"
+from tracecrypt.document.distributor import DistributionService, RecipientSpec
+from tracecrypt.document.encryption import ContentEncryption
+from tracecrypt.document.hasher import DocumentHasher
+from tracecrypt.document.key_wrap import KeyWrapEngine
+from tracecrypt.document.package import DistributionPackage
+from tracecrypt.document.reader import DocumentReader
+from tracecrypt.document.types import (
+    DistributionPackageHeader,
+    PackageValidationResult,
+    RecipientEnvelope,
+    SecureDocumentBuffer,
+)
+from tracecrypt.document.validator import PackageValidator
+
+__all__ = [
+    "DistributionPackage",
+    "DistributionPackageHeader",
+    "RecipientEnvelope",
+    "SecureDocumentBuffer",
+    "PackageValidationResult",
+    "DocumentHasher",
+    "DocumentReader",
+    "ContentEncryption",
+    "KeyWrapEngine",
+    "PackageValidator",
+    "DistributionService",
+    "RecipientSpec",
+]

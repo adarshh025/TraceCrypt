@@ -1,0 +1,116 @@
+# The .tcdist Container Format Specification
+
+## 1. Specification Overview
+
+The `.tcdist` (TraceCrypt Distribution) container is a deterministic, versioned binary envelope engineered for secure offline distribution of encrypted documents over air-gapped media or local networks.
+
+The container format is defined to prevent:
+* Arbitrary deserialization vulnerabilities (no Python `pickle` or uncontrolled object hydration).
+* Zip bombs, path traversal, or archive decompression attacks.
+* Bit-flipping and payload truncation.
+* Metadata swapping or decoupling from the encrypted payload.
+
+---
+
+## 2. Binary Layout
+
+A valid `.tcdist` binary stream consists of 9 sequential fields structured as follows:
+
+```
++-------------------------------------------------------------------------+
+| Magic Header: "TCDIST01" (8 bytes ASCII)                                 |
++-------------------------------------------------------------------------+
+| Header Length Prefix: uint32 Big-Endian (4 bytes)                        |
++-------------------------------------------------------------------------+
+| Canonical Metadata Header: RFC 8785 UTF-8 JSON bytes (Variable Length)  |
++-------------------------------------------------------------------------+
+| AES-256-GCM Nonce: 12 bytes raw random bytes                           |
++-------------------------------------------------------------------------+
+| AES-256-GCM Auth Tag: 16 bytes raw authentication tag                   |
++-------------------------------------------------------------------------+
+| Ciphertext Length Prefix: uint64 Big-Endian (8 bytes)                   |
++-------------------------------------------------------------------------+
+| Ciphertext: Encrypted Document Payload (Variable Length)                |
++-------------------------------------------------------------------------+
+| SHA3-256 Body Checksum: 32 bytes raw SHA3-256 digest                    |
++-------------------------------------------------------------------------+
+| Magic Footer: "TCDISTEND" (9 bytes ASCII)                                |
++-------------------------------------------------------------------------+
+```
+
+### 2.1 Field Definitions & Sizes
+
+| Field Name | Type / Encoding | Size (Bytes) | Description |
+|---|---|---|---|
+| `magic_header` | ASCII String | 8 | Constant `b"TCDIST01"`. Identifies package version 1. |
+| `header_length` | Big-Endian `uint32` | 4 | Byte length of the canonical metadata JSON block. |
+| `header_bytes` | UTF-8 RFC 8785 JSON | Variable (`header_length`) | Canonical serialized `DistributionPackageHeader`. |
+| `nonce` | Binary CSPRNG | 12 | 96-bit fresh random nonce for document content AES-256-GCM. |
+| `auth_tag` | Binary GMAC | 16 | 128-bit authentication tag computed over AAD and ciphertext. |
+| `ciphertext_length` | Big-Endian `uint64` | 8 | Byte length of the AES-256-GCM ciphertext. |
+| `ciphertext` | Binary Payload | Variable (`ciphertext_length`) | Symmetrically encrypted source document bytes. |
+| `body_checksum` | Binary Digest | 32 | SHA3-256 digest computed over `[nonce \|\| auth_tag \|\| ciphertext_len \|\| ciphertext]`. |
+| `magic_footer` | ASCII String | 9 | Constant `b"TCDISTEND"`. Confirms container termination and non-truncation. |
+
+---
+
+## 3. Canonical Metadata Header Schema
+
+The metadata header is serialized using **RFC 8785 JSON Canonicalization Scheme (JCS)** to ensure a byte-level deterministic representation across all platforms.
+
+```json
+{
+  "format_version": "1.0.0",
+  "distribution_id": "dst-a1b2c3d4e5f6789012345678abcdef01",
+  "document_id": "doc-f0e1d2c3b4a596877869504132231405",
+  "cipher_algorithm": "AES-256-GCM",
+  "kem_algorithm": "ML-KEM-768",
+  "source_document_hash": "a9f3b2...64 hex chars (SHA3-256)...",
+  "recipient_set_digest": "4c8e1a...64 hex chars (SHA3-256)...",
+  "created_at": 1774579200000000,
+  "recipients": [
+    {
+      "version": "1.0.0",
+      "recipient_id": "rcp-99a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4",
+      "key_id": "key-pqc-kem-01",
+      "certificate_serial": "crt-d34db33f00112233445566778899aabb",
+      "kem_algorithm": "ML-KEM-768",
+      "kem_parameter_set": "ML-KEM-768",
+      "kem_ciphertext_b64": "<1088 bytes base64 encoded>",
+      "wrapped_cek_nonce_b64": "<12 bytes base64 encoded>",
+      "wrapped_cek_tag_b64": "<16 bytes base64 encoded>",
+      "wrapped_cek_b64": "<32 bytes base64 encoded>",
+      "kdf_info": "TraceCrypt/DistributionKeyWrap/v1:dst-...:rcp-...:1"
+    }
+  ]
+}
+```
+
+---
+
+## 4. Deterministic vs. Random Fields
+
+To guarantee cryptographic security while ensuring deterministic validation:
+
+| Field | Nature | Security Guarantee |
+|---|---|---|
+| `DocumentID` | Cryptographically Random | Unique 128-bit entropy (`doc-...`); no metadata leakage. |
+| `DistributionID` | Cryptographically Random | Unique 128-bit entropy (`dst-...`); identifies this distribution instance. |
+| `CEK` | Cryptographically Random | Fresh 256-bit AES symmetric key generated by OS CSPRNG. |
+| `nonce` (Document) | Cryptographically Random | Fresh 96-bit nonce; never reused with the same CEK. |
+| `nonce` (Envelope) | Cryptographically Random | Fresh 96-bit nonce per recipient wrapping key. |
+| `source_document_hash` | Deterministic | Exact raw SHA3-256 digest of original document bytes. |
+| `recipient_set_digest` | Deterministic | SHA3-256 over canonical sorted list of recipient IDs. |
+| `kdf_info` | Deterministic | Exact domain-separated binding string. |
+| `body_checksum` | Deterministic | SHA3-256 integrity hash over non-header binary payload. |
+
+---
+
+## 5. Security & Defensive Parsing Rules
+
+When parsing a `.tcdist` file, `PackageValidator` and `DistributionPackage.from_bytes()` enforce:
+1. **Zero-Trust Input Parsing:** Header length prefix is bounds-checked (max 4 MB) before reading.
+2. **Strict Slicing:** Ciphertext length is checked against actual remaining buffer length.
+3. **No Trailing Garbage:** Total stream length must equal exact expected offset to `magic_footer`.
+4. **Body Checksum Check:** Any single-bit corruption in nonce, tag, or ciphertext is caught before invoking AES-GCM primitives.
+5. **No Dangerous Decompression:** Pure binary container parsing without external compression engines.

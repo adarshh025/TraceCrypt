@@ -59,8 +59,7 @@ TraceCrypt is an offline, post-quantum, air-gapped document distribution and for
 ---
 
 ## Current Status
-* [x] **Phase 1: Production-Grade Foundation:** Modular architecture, Pydantic v2 settings, typed domain identifiers, RFC 8785 canonicalization, deterministic SHA-3 hashing, air-gap guard, SQLite store, logging redaction.
-* [x] **Phase 3: Post-Quantum Identity & Key Management Subsystem:**
+* [x] **Phase 2: Post-Quantum Identity & Key Management Subsystem:**
   * **NIST FIPS 203 (ML-KEM-768):** Key encapsulation ($pk=1,184\text{B}, sk=2,400\text{B}, c=1,088\text{B}, ss=32\text{B}$) with implicit rejection.
   * **NIST FIPS 204 (ML-DSA-65):** Digital signatures ($pk=1,952\text{B}, sk=4,032\text{B}, \sigma=3,309\text{B}$) with deterministic verification.
   * **Strict Role Separation:** Type-safe separation preventing cross-algorithm key substitution.
@@ -69,7 +68,13 @@ TraceCrypt is an offline, post-quantum, air-gapped document distribution and for
   * **Key Lifecycle & Rotation:** Monotonic state machine preventing un-revocation; key rotation preserving historical event verifiability.
   * **Argon2id Keystore:** Password-derived encryption ($m=64\text{MB}, t=3, p=4$) + AES-256-GCM with canonical AAD metadata binding and Windows `icacls` permission hardening.
   * **Device Enrollment:** Workstation enrollment with hardware telemetry collection.
-  * **Full Quality Gates:** 175 passing tests (100%), 0 flake8 errors, deterministic KAT vectors verified.
+* [x] **Phase 3: Encrypted Document Distribution Subsystem (.tcdist):**
+  * **Single-Content Encryption:** Document encrypted ONCE per distribution using AES-256-GCM with fresh 256-bit CEK and 96-bit nonce.
+  * **Multi-Recipient ML-KEM-768 Encapsulation:** Independent encapsulation per recipient, derived via HKDF-SHA256 with strict domain separation.
+  * **Deterministic .tcdist Binary Container:** `TCDIST01` header, RFC 8785 canonical metadata AAD binding, SHA3-256 body checksum, and `TCDISTEND` footer.
+  * **17-Point Offline Validation Pipeline:** Fail-closed validation verifying dimensions, algorithm parameters, and body checksums before any cryptographic operation.
+  * **Controlled In-Memory Decryption:** `SecureDocumentBuffer` with active zeroization preventing unwatermarked document leaks to disk.
+  * **Quality Gates:** 229 passing tests (100%), 0 flake8 errors, comprehensive 24-attack security test suite.
 
 ---
 
@@ -77,29 +82,45 @@ TraceCrypt is an offline, post-quantum, air-gapped document distribution and for
 
 ### 1. Environment Verification
 ```bash
-python -m tracecrypt.cli.main doctor
-python -m tracecrypt.cli.main ca status
+python -m tracecrypt doctor
+python -m tracecrypt ca status
 ```
 
 ### 2. Initialize Offline Root CA
 ```bash
-python -m tracecrypt.cli.main ca init --ca-id "ca-root-01" --passphrase "SecretMasterPass123!"
+python -m tracecrypt ca init --ca-id "ca-root-01" --passphrase "SecretMasterPass123!"
 ```
 
 ### 3. Generate Post-Quantum Identity & Certificate
 ```bash
-python -m tracecrypt.cli.main identity generate --owner-id "rcp-agent-alpha" --passphrase "AgentKeyPass123!" --ca-passphrase "SecretMasterPass123!"
+python -m tracecrypt identity generate --owner-id "rcp-agent-alpha" --passphrase "AgentKeyPass123!" --ca-passphrase "SecretMasterPass123!"
 ```
 
-### 4. Inspect & Verify Identity
+### 4. Package Encrypted Document (.tcdist)
 ```bash
-python -m tracecrypt.cli.main identity inspect --recipient-id "rcp-agent-alpha"
-python -m tracecrypt.cli.main identity status
+# Calculate integrity hash
+python -m tracecrypt document hash classified_briefing.pdf
+
+# Package document for authorized recipients
+python -m tracecrypt document package \
+    --input classified_briefing.pdf \
+    --output classified_briefing.tcdist \
+    --recipient rcp-agent-alpha
+
+# Validate container offline (17-point verification)
+python -m tracecrypt document validate classified_briefing.tcdist
+
+# Inspect recipient envelopes in package
+python -m tracecrypt document recipients classified_briefing.tcdist
 ```
 
-### 5. Run Test Suite
+### 5. Run Test Suite & Benchmarks
 ```bash
+# Run complete test suite (229 tests)
 python -m pytest
+
+# Run distribution performance benchmarks
+python -m pytest tests/benchmarks/test_distribution_benchmarks.py -s
 ```
 
 ---

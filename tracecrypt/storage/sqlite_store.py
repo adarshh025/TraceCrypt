@@ -23,6 +23,7 @@ from tracecrypt.identity.certificate import PQCIdentityCertificate
 from tracecrypt.identity.lifecycle import RevocationRecord
 from tracecrypt.models.domain import Device, Document, User, UserRole, UserStatus
 from tracecrypt.utils.identifiers import DeviceID, DocumentID, UserID
+from tracecrypt.utils.timestamps import utc_now_micros
 
 
 class SQLiteStorageManager:
@@ -369,6 +370,41 @@ class SQLiteStorageManager:
                 return results
         except Exception as e:
             raise StorageError(f"Failed to query certificates for subject {subject_id}: {e}") from e
+
+    def get_active_kem_certificate(self, subject_id: str) -> Optional[PQCIdentityCertificate]:
+        """Retrieve the currently valid, unrevoked ML-KEM certificate for a subject."""
+        certs = self.list_certificates_for_subject(subject_id)
+        revocations = {r.serial_number for r in self.list_revocations()}
+        now = utc_now_micros()
+        for cert in certs:
+            if cert.key_purpose == KeyPurpose.KEY_ENCAPSULATION:
+                if cert.serial_number in revocations:
+                    continue
+                if cert.valid_from <= now <= cert.valid_until:
+                    return cert
+        return None
+
+    def get_active_kem_keystore_path(self, owner_id: str) -> Optional[Path]:
+        """Find the keystore file path for the active KEM key of the owner."""
+        query = """
+        SELECT keystore_path FROM key_metadata
+        WHERE owner_id = ? AND purpose = ? AND status = ?
+        ORDER BY created_at DESC;
+        """
+        try:
+            with self._get_connection() as conn:
+                cur = conn.execute(
+                    query,
+                    (owner_id, KeyPurpose.KEY_ENCAPSULATION.value, KeyStatus.ACTIVE.value),
+                )
+                row = cur.fetchone()
+                if row and row["keystore_path"]:
+                    p = Path(row["keystore_path"])
+                    if p.exists():
+                        return p
+                return None
+        except Exception as e:
+            raise StorageError(f"Failed to query KEM keystore path for {owner_id}: {e}") from e
 
     def list_all_certificates(self) -> List[PQCIdentityCertificate]:
         query = "SELECT canonical_json FROM certificates ORDER BY valid_from DESC;"

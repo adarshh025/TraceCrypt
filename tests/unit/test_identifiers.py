@@ -7,6 +7,7 @@ from tracecrypt.utils.identifiers import (
     BlockID,
     CaseID,
     DeviceID,
+    DistributionID,
     DocumentID,
     EventID,
     RecipientID,
@@ -18,6 +19,7 @@ from tracecrypt.utils.identifiers import (
 
 ALL_ID_CLASSES = [
     (DocumentID, "doc-"),
+    (DistributionID, "dst-"),
     (UserID, "usr-"),
     (RecipientID, "rcp-"),
     (DeviceID, "dev-"),

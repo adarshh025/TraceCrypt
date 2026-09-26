@@ -10,6 +10,7 @@ from tracecrypt.errors import (
     ForensicError,
     IntegrityError,
     LedgerError,
+    PackageValidationError,
     SecurityError,
     StorageError,
     TraceCryptError,
@@ -30,6 +31,7 @@ ALL_EXCEPTIONS = [
     ForensicError,
     AirGapViolation,
     IntegrityError,
+    PackageValidationError,
     VerificationError,
 ]
 

@@ -113,13 +113,16 @@ class OfflineRootCA:
         role: str,
         validity_days: int = 365,
         device_id: Optional[str] = None,
+        valid_from: Optional[int] = None,
+        valid_until: Optional[int] = None,
     ) -> PQCIdentityCertificate:
         """Issue an identity certificate for ML-KEM-768 key encapsulation."""
         if self._private_key is None:
             raise SecurityError("Root CA cannot issue certificates without unlocked private key.")
 
         now = utc_now_micros()
-        valid_until = now + (validity_days * 86_400 * 1_000_000)
+        v_from = valid_from if valid_from is not None else now
+        v_until = valid_until if valid_until is not None else (v_from + (validity_days * 86_400 * 1_000_000))
         serial = f"crt-{SecureRandom.random_nonce_128()}"
 
         cert_proto = PQCIdentityCertificate(
@@ -135,8 +138,8 @@ class OfflineRootCA:
             parameter_set="ML-KEM-768",
             public_key_b64=public_key.to_b64(),
             public_key_fingerprint=public_key.fingerprint,
-            valid_from=now,
-            valid_until=valid_until,
+            valid_from=v_from,
+            valid_until=v_until,
             signature_b64="",
         )
 

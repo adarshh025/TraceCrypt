@@ -47,6 +47,11 @@ class HashDigest:
         """Return the canonical formatted string representation."""
         return self._formatted
 
+    @property
+    def raw_bytes(self) -> bytes:
+        """Return the raw byte representation of the digest."""
+        return bytes.fromhex(self.hex_digest)
+
     def __str__(self) -> str:
         return self._formatted
 

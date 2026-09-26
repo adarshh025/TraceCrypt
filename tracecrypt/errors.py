@@ -83,6 +83,11 @@ class CertificateValidationError(SecurityError):
     pass
 
 
+class PackageValidationError(SecurityError):
+    """Raised when a .tcdist distribution package fails offline structural or integrity validation."""
+    pass
+
+
 class VerificationError(TraceCryptError):
     """Raised when forensic attribution verification encounters an unverifiable state."""
     pass

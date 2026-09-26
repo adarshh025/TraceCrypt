@@ -60,3 +60,8 @@ class SecureRandom:
             raise ValidationError(f"Target class must inherit from BaseID, got {id_cls}")
         raw_hex = cls.random_nonce_128()
         return id_cls.from_raw_hex(raw_hex)
+
+    @classmethod
+    def generate_typed_id(cls, id_cls: Type[T_ID]) -> T_ID:
+        """Alias for generate_id for backwards/forwards convenience."""
+        return cls.generate_id(id_cls)
