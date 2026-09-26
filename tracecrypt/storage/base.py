@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from typing import List, Optional, Protocol, runtime_checkable
 
+from tracecrypt.crypto.types import KeyMetadata
 from tracecrypt.event.schema import DecryptionEvent
+from tracecrypt.identity.certificate import PQCIdentityCertificate
+from tracecrypt.identity.lifecycle import RevocationRecord
 from tracecrypt.models.domain import Device, Document, User
 
 
@@ -44,6 +47,55 @@ class MetadataStore(Protocol):
 
     def get_document(self, document_id: str) -> Optional[Document]:
         """Retrieve document metadata by DocumentID."""
+        ...
+
+
+@runtime_checkable
+class IdentityStore(Protocol):
+    """Protocol for local certificate, key metadata, and revocation state persistence."""
+
+    def save_certificate(self, cert: PQCIdentityCertificate) -> None:
+        """Store certified PQC identity certificate."""
+        ...
+
+    def get_certificate(self, serial_number: str) -> Optional[PQCIdentityCertificate]:
+        """Retrieve certificate by serial number."""
+        ...
+
+    def list_certificates_for_subject(self, subject_id: str) -> List[PQCIdentityCertificate]:
+        """List all certificates issued to a subject."""
+        ...
+
+    def list_all_certificates(self) -> List[PQCIdentityCertificate]:
+        """List all certificates currently in the store."""
+        ...
+
+    def list_subjects(self) -> List[str]:
+        """List distinct subject IDs having certificates in the store."""
+        ...
+
+    def save_key_metadata(self, metadata: KeyMetadata, keystore_path: str) -> None:
+        """Store key metadata referencing local encrypted keystore container."""
+        ...
+
+    def get_key_metadata(self, key_id: str) -> Optional[KeyMetadata]:
+        """Retrieve key metadata."""
+        ...
+
+    def list_all_keys(self) -> List[KeyMetadata]:
+        """List all key metadata records."""
+        ...
+
+    def save_revocation(self, record: RevocationRecord) -> None:
+        """Store signed revocation assertion."""
+        ...
+
+    def get_revocation(self, serial_number: str) -> Optional[RevocationRecord]:
+        """Retrieve revocation record for a certificate serial."""
+        ...
+
+    def list_revocations(self) -> List[RevocationRecord]:
+        """Return all local revocation records."""
         ...
 
 

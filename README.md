@@ -58,21 +58,18 @@ TraceCrypt is an offline, post-quantum, air-gapped document distribution and for
 
 ---
 
-## Current Status (Phase 1: Production-Grade Foundation)
-
-* [x] **Repository Scaffolding & Packaging:** Clean modular hierarchy, strict `.gitignore`, `.gitattributes`, `pyproject.toml`.
-* [x] **Strict Configuration Management:** Typed settings via Pydantic v2 supporting DEVELOPMENT, TEST, and PRODUCTION modes. Fails closed on insecure parameters.
-* [x] **Typed Domain Models:** 14 core domain entities with strict validation, zero private key leakage, and no ambiguous types.
-* [x] **Typed Identifiers:** Immutability, prefix namespaces (`doc-`, `usr-`, `rcp-`, `dev-`, `ses-`, `wm-`, `evt-`, `tx-`, `blk-`, `cas-`), and regex validation.
-* [x] **RFC 8785 JSON Canonicalization Scheme (JCS):** Pure-Python standards-compliant canonicalizer supporting UTF-16 lexicographical sorting, ECMA-262 numbers, and minimal escaping.
-* [x] **Deterministic SHA-3 Hashing:** Byte, file, and canonical object digest utilities formatted as `sha3-256:<hex>`.
-* [x] **Secure Randomness Abstraction:** CSPRNG backed strictly by `os.urandom` (zero pseudo-random generator leakage).
-* [x] **Structured Exception Hierarchy:** 13 specialized error types providing diagnostic clarity without secret leakage.
-* [x] **Air-Gap Enforcement:** Socket-level interception guard blocking unauthorized network and DNS attempts.
-* [x] **Structured Security Logging:** Automated regex redaction of private keys, passphrases, and raw secrets.
-* [x] **Local Storage Foundation:** Hardened SQLite manager with WAL mode, synchronous=FULL, and foreign key enforcement.
-* [x] **CLI Foundation:** Administrative commands (`version`, `doctor`, `config validate`, `security airgap-check`).
-* [x] **FastAPI Foundation:** Local-only REST endpoints (`/health`, `/version`, `/security/status`) with security headers.
+## Current Status
+* [x] **Phase 1: Production-Grade Foundation:** Modular architecture, Pydantic v2 settings, typed domain identifiers, RFC 8785 canonicalization, deterministic SHA-3 hashing, air-gap guard, SQLite store, logging redaction.
+* [x] **Phase 3: Post-Quantum Identity & Key Management Subsystem:**
+  * **NIST FIPS 203 (ML-KEM-768):** Key encapsulation ($pk=1,184\text{B}, sk=2,400\text{B}, c=1,088\text{B}, ss=32\text{B}$) with implicit rejection.
+  * **NIST FIPS 204 (ML-DSA-65):** Digital signatures ($pk=1,952\text{B}, sk=4,032\text{B}, \sigma=3,309\text{B}$) with deterministic verification.
+  * **Strict Role Separation:** Type-safe separation preventing cross-algorithm key substitution.
+  * **Offline Root CA:** Air-gapped trust anchor issuing ML-DSA-65 identity certificates.
+  * **PQC Identity Certificates:** Versioned RFC 8785 canonical identity envelopes with 12-point offline validation.
+  * **Key Lifecycle & Rotation:** Monotonic state machine preventing un-revocation; key rotation preserving historical event verifiability.
+  * **Argon2id Keystore:** Password-derived encryption ($m=64\text{MB}, t=3, p=4$) + AES-256-GCM with canonical AAD metadata binding and Windows `icacls` permission hardening.
+  * **Device Enrollment:** Workstation enrollment with hardware telemetry collection.
+  * **Full Quality Gates:** 175 passing tests (100%), 0 flake8 errors, deterministic KAT vectors verified.
 
 ---
 
@@ -81,21 +78,28 @@ TraceCrypt is an offline, post-quantum, air-gapped document distribution and for
 ### 1. Environment Verification
 ```bash
 python -m tracecrypt.cli.main doctor
+python -m tracecrypt.cli.main ca status
 ```
 
-### 2. Validate Configuration
+### 2. Initialize Offline Root CA
 ```bash
-python -m tracecrypt.cli.main config validate
+python -m tracecrypt.cli.main ca init --ca-id "ca-root-01" --passphrase "SecretMasterPass123!"
 ```
 
-### 3. Check Air-Gap Status
+### 3. Generate Post-Quantum Identity & Certificate
 ```bash
-python -m tracecrypt.cli.main security airgap-check
+python -m tracecrypt.cli.main identity generate --owner-id "rcp-agent-alpha" --passphrase "AgentKeyPass123!" --ca-passphrase "SecretMasterPass123!"
 ```
 
-### 4. Run Test Suite
+### 4. Inspect & Verify Identity
 ```bash
-pytest
+python -m tracecrypt.cli.main identity inspect --recipient-id "rcp-agent-alpha"
+python -m tracecrypt.cli.main identity status
+```
+
+### 5. Run Test Suite
+```bash
+python -m pytest
 ```
 
 ---

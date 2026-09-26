@@ -23,5 +23,14 @@ If you discover a potential security flaw, vulnerability, or cryptographic weakn
 
 ## 4. Key Custody & Secrets Policy
 * **Zero Hardcoded Secrets:** Private keys, seed phrases, passphrases, and test tokens must never be committed to source control.
-* **Encrypted Storage:** Private signing and decapsulation keys must be stored inside Argon2id-encrypted `.tckeystore` envelopes.
-* **Memory Zeroization:** Plaintext document buffers, ephemeral symmetric keys, and decrypted private key bytes must be actively overwritten with zeros immediately after operation completion.
+* **Encrypted Storage:** Private signing and decapsulation keys must be stored inside Argon2id-encrypted (`m=64MB, t=3, p=4`) + AES-256-GCM containers (`EncryptedKeyContainer`) with RFC 8785 canonical Authenticated Associated Data (AAD) metadata binding.
+* **Host Permission Hardening:** Windows filesystem ACLs are restricted using `icacls /inheritance:r /grant:r %USERNAME%:F`.
+* **Memory Zeroization Policy:** Plaintext document buffers, ephemeral symmetric keys, and decrypted private key bytes in mutable buffers must be actively overwritten with zeros (`buf[i] = 0`) immediately after operation completion. Pure Python CPython memory allocation limitations are explicitly documented in `docs/security/keystore.md`.
+* **Cryptographic Separation:** Under no circumstances may an ML-KEM private key be used for signing, nor may an ML-DSA private key be used for key decapsulation.
+
+## 5. Security Documentation References
+* [Post-Quantum Cryptography Specification](file:///C:/TraceCrypt/docs/security/pqc.md)
+* [Key Management & Lifecycle](file:///C:/TraceCrypt/docs/security/key-management.md)
+* [Offline PKI & Certificate Architecture](file:///C:/TraceCrypt/docs/security/pki.md)
+* [Argon2id Keystore & Container Security](file:///C:/TraceCrypt/docs/security/keystore.md)
+* [Device Enrollment & Hardware Telemetry](file:///C:/TraceCrypt/docs/security/device-identity.md)

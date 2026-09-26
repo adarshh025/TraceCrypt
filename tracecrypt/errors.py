@@ -78,6 +78,11 @@ class IntegrityError(SecurityError):
     pass
 
 
+class CertificateValidationError(SecurityError):
+    """Raised when an identity certificate fails offline validation."""
+    pass
+
+
 class VerificationError(TraceCryptError):
     """Raised when forensic attribution verification encounters an unverifiable state."""
     pass

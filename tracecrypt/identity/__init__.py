@@ -1,12 +1,41 @@
-"""Identity and Offline PKI subsystem for TraceCrypt.
+"""Identity and Offline PKI subsystem for TraceCrypt."""
 
-Implementation scheduled for Phase 2:
-- NIST FIPS 204 ML-DSA-65 signing key pairs
-- NIST FIPS 203 ML-KEM-768 encapsulation key pairs
-- Offline Root Certificate Authority and Intermediate RA
-- PQC X.509 / CBOR Identity Certificates
-- Argon2id-encrypted .tckeystore storage
-- Hardware workstation fingerprinting
-"""
+from tracecrypt.identity.ca import OfflineRootCA
+from tracecrypt.identity.certificate import (
+    CertificateValidator,
+    PQCIdentityCertificate,
+    RevocationProvider,
+)
+from tracecrypt.identity.device import (
+    DeviceEnrollmentManager,
+    DeviceEnrollmentRecord,
+    DeviceFingerprintEngine,
+)
+from tracecrypt.identity.keystore import (
+    Argon2idKDFParams,
+    EncryptedKeyContainer,
+    KeystoreManager,
+)
+from tracecrypt.identity.lifecycle import (
+    KeyLifecycleManager,
+    OfflineRevocationStore,
+    RevocationReason,
+    RevocationRecord,
+)
 
-__status__ = "DEFERRED_TO_PHASE_2"
+__all__ = [
+    "OfflineRootCA",
+    "PQCIdentityCertificate",
+    "CertificateValidator",
+    "RevocationProvider",
+    "Argon2idKDFParams",
+    "EncryptedKeyContainer",
+    "KeystoreManager",
+    "KeyLifecycleManager",
+    "OfflineRevocationStore",
+    "RevocationReason",
+    "RevocationRecord",
+    "DeviceEnrollmentManager",
+    "DeviceEnrollmentRecord",
+    "DeviceFingerprintEngine",
+]
