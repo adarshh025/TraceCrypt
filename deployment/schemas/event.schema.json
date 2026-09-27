@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DecryptionEvent",
+  "type": "object",
+  "required": [
+    "event_version",
+    "schema_version",
+    "protocol_version",
+    "event_type",
+    "event_id",
+    "document_id",
+    "distribution_id",
+    "document_hash",
+    "recipient_id",
+    "recipient_certificate_id",
+    "session_id",
+    "watermark_id",
+    "watermark_version",
+    "anti_replay_nonce",
+    "timestamp",
+    "pqc_algorithms"
+  ],
+  "properties": {
+    "event_version": { "type": "string", "const": "1.0.0" },
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "protocol_version": { "type": "string", "const": "1.0.0" },
+    "software_version": { "type": "string" },
+    "event_type": { "type": "string", "const": "DECRYPTION_ATTRIBUTION" },
+    "event_id": { "type": "string", "pattern": "^evt-[a-f0-9]{32}$" },
+    "document_id": { "type": "string", "pattern": "^doc-[a-f0-9]{32}$" },
+    "distribution_id": { "type": "string", "pattern": "^dst-[a-f0-9]{32}$" },
+    "document_hash": { "type": "string", "pattern": "^sha3-256:[a-f0-9]{64}$" },
+    "recipient_id": { "type": "string", "pattern": "^rcp-[a-f0-9]{32}$" },
+    "recipient_certificate_id": { "type": "string", "pattern": "^crt-[a-f0-9]{32}$" },
+    "session_id": { "type": "string", "pattern": "^ses-[a-f0-9]{32}$" },
+    "watermark_id": { "type": "string", "pattern": "^wm-[a-f0-9]{32}$" },
+    "watermark_version": { "type": "integer", "minimum": 1 },
+    "anti_replay_nonce": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+    "timestamp": { "type": "integer", "minimum": 0 },
+    "pqc_algorithms": {
+      "type": "object",
+      "required": ["kem", "signature", "hash"],
+      "properties": {
+        "kem": { "type": "string", "const": "ML-KEM-768" },
+        "signature": { "type": "string", "const": "ML-DSA-65" },
+        "hash": { "type": "string", "const": "SHA3-256" }
+      }
+    }
+  }
+}

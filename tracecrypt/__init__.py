@@ -5,6 +5,11 @@ attribution system with per-session invisible forensic watermarking and
 permissioned distributed ledger audibility.
 """
 
-__version__ = "0.1.0"
+from tracecrypt.version import (
+    APPLICATION_VERSION as __version__,
+    PROTOCOL_VERSION,
+    get_system_versions,
+)
+
 __author__ = "TraceCrypt Core Architecture Team"
-__all__ = ["__version__", "__author__"]
+__all__ = ["__version__", "__author__", "PROTOCOL_VERSION", "get_system_versions"]

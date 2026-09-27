@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ForensicProofBundle",
+  "type": "object",
+  "required": [
+    "format_version",
+    "case_id",
+    "bundle_digest",
+    "evidence",
+    "verdict",
+    "created_at"
+  ],
+  "properties": {
+    "format_version": { "type": "string", "const": "1.0.0" },
+    "case_id": { "type": "string", "pattern": "^cas-[a-f0-9]{32}$" },
+    "bundle_digest": { "type": "string", "pattern": "^sha3-256:[a-f0-9]{64}$" },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "VERIFIED",
+        "TAMPERED_EVENT",
+        "TAMPERED_DOCUMENT",
+        "REVOKED_CERTIFICATE",
+        "EXPIRED_CERTIFICATE",
+        "INVALID_SIGNATURE",
+        "MERKLE_PROOF_FAILED",
+        "BYZANTINE_FORK_DETECTED",
+        "CORRUPTED_WATERMARK"
+      ]
+    },
+    "evidence": { "type": "object" },
+    "extracted_watermark": { "type": ["object", "null"] },
+    "ledger_proof": { "type": ["object", "null"] },
+    "recipient_certificate": { "type": ["object", "null"] },
+    "root_ca_public_key_b64": { "type": ["string", "null"] },
+    "chain_of_custody": { "type": "array" },
+    "created_at": { "type": "integer" }
+  }
+}

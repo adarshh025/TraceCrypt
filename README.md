@@ -1,203 +1,192 @@
-# TraceCrypt: Offline Forensic Document Attribution Platform
+# TraceCrypt: Offline Post-Quantum Forensic Document Attribution Platform
 
-TraceCrypt is an offline, post-quantum, air-gapped document distribution and forensic attribution platform designed for sensitive and classified operational environments.
+**Version:** 1.0.0  
+**Build Target:** Air-Gapped Environments (Windows x64 / Linux)  
+**Security Standard:** 100% Offline, Zero Network Egress, Post-Quantum Cryptography  
 
----
-
-## Core Capabilities & Security Model
-
-1. **Recipient-Specific Invisible Forensic Watermarking:** Every successful document decryption embeds an invisible, unique watermark bound to the specific recipient and the ephemeral decryption session.
-2. **Post-Quantum Cryptography:** Built upon NIST post-quantum cryptographic standards:
-   * **NIST FIPS 203 (ML-KEM-768):** Key encapsulation for confidential multi-recipient distribution.
-   * **NIST FIPS 204 (ML-DSA-65):** Digital signatures over canonical decryption events.
-3. **Cryptographically Signed Decryption Events:** Decryption automatically triggers the construction of a canonical event record adhering to **RFC 8785 (JSON Canonicalization Scheme)**, signed by the recipient's certified ML-DSA-65 private key.
-4. **Permissioned Distributed Ledger:** Decryption events are permanently committed to an offline Byzantine Fault Tolerant (BFT) permissioned ledger on the local air-gapped LAN.
-5. **Deterministic Forensic Attribution:** When a document leaks, an investigator can extract the watermark blindly, locate the corresponding ledger event, mathematically verify the recipient's signature, and output one of 9 deterministic verdicts.
-6. **Zero-Trust Air-Gapped Operation:** Designed to operate completely without internet connectivity, external APIs, cloud KMS, public blockchains, or external certificate authorities.
+TraceCrypt is a production-grade, fully offline, air-gapped forensic document attribution platform. It enforces cryptographic non-repudiation on document access by embedding unique, invisible transform-domain watermarks at the moment of decryption, committing digitally signed canonical attribution events into an offline permissioned BFT ledger, and providing deterministic forensic adjudication when leaks occur.
 
 ---
 
-## Architecture Overview
+## 1. Cryptographic Baseline & Architecture
+
+TraceCrypt operates without cloud KMS, external certificate authorities, public blockchains, SaaS dependencies, or telemetry.
+
+* **NIST FIPS 203 (ML-KEM-768):** Post-quantum key encapsulation for multi-recipient document distribution.
+* **NIST FIPS 204 (ML-DSA-65):** Post-quantum digital signatures over canonical RFC 8785 attribution events and BFT consensus messages.
+* **Symmetric Encryption:** AES-256-GCM with unique 256-bit Content-Encryption Keys (CEK) and 96-bit nonces.
+* **Hashing & Digest:** NIST FIPS 202 SHA3-256 with explicit domain separation prefixes.
+* **Key Derivation & Protection:** Argon2id ($m=64\text{ MB}, t=3, p=4$) keystores with Windows `icacls` ACL lockdown.
+* **Forensic Watermarking:** 2D Haar DWT + 8x8 block DCT spread-spectrum modulation in mid-frequency subbands with Systematic Reed-Solomon RS(32, 16) error correction.
+* **Permissioned BFT Ledger:** Tendermint-inspired round progression ($n=4, f=1$, Quorum $= 3$) with binary Merkle inclusion proofs.
+* **Forensic Engine:** Deterministic 9-state adjudication state machine outputting verifiable `.tcproof` bundles and signed PDF reports.
+
+---
+
+## 2. System Deployment Topology
 
 ```
-[Offline Root CA] ────────► Issues ML-DSA-65 Identity Certificates
-                                    │
-┌────────────────────────┐          │
-│   SENDER WORKSTATION   │          ▼
-│ Encrypts Doc (AES-GCM) ├────► [.tcdist Package]
-│ Encapsulates (ML-KEM)  │          │
-└────────────────────────┘          │
-                                    ▼
-┌────────────────────────────────────────────────────────┐
-│                  RECIPIENT WORKSTATION                 │
-│ 1. Decapsulate ML-KEM & Decrypt AES-256-GCM            │
-│ 2. Embed DWT-DCT Watermark (RS 32,16 ECC)              │
-│ 3. Construct RFC 8785 Canonical DecryptionEvent        │
-│ 4. Sign Event with Recipient ML-DSA-65 Private Key     │
-│ 5. Commit Transaction to Permissioned Ledger           │
-│ 6. Render Document & Zeroize Sensitive Buffers        │
-└────────────────────────┬───────────────────────────────┘
-                         │
-                         ▼
-┌────────────────────────────────────────────────────────┐
-│            AIR-GAPPED BFT LEDGER (4 NODES)             │
-│ Validates Signatures, Nonces, and Merkle State Root    │
-└────────────────────────┬───────────────────────────────┘
-                         │
-                         ▼ (Upon Leakage)
-┌────────────────────────────────────────────────────────┐
-│           FORENSIC INVESTIGATION WORKSTATION           │
-│ 1. Normalize Leaked PDF / Scanned Image                │
-│ 2. Blind DWT-DCT Extract Watermark Bitstream           │
-│ 3. Reed-Solomon Decode Payload (WatermarkID, DocHash)  │
-│ 4. Query Ledger & Retrieve Event + Merkle Proof        │
-│ 5. Verify ML-DSA-65 Signature & Cert Validity          │
-│ 6. Output 1 of 9 Deterministic Verdicts & Proof Report │
-└────────────────────────────────────────────────────────┘
+                      ┌────────────────────────┐
+                      │    OFFLINE ROOT CA     │
+                      │ NIST FIPS 204 ML-DSA   │
+                      └───────────┬────────────┘
+                                  │ Certified Keys
+         ┌────────────────────────┼────────────────────────┐
+         ▼                        ▼                        ▼
+┌──────────────────┐    ┌──────────────────┐    ┌──────────────────────┐
+│  SENDER STATION  │    │  RECIPIENT GATE  │    │ 4-NODE BFT CONSENSUS │
+│ AES-256-GCM Enc  │    │ ML-KEM Decaps    │    │ Node-1 (Port 9101)   │
+│ ML-KEM Wrap      ├───►│ DWT-DCT Watermark├───►│ Node-2 (Port 9102)   │
+│ .tcdist Envelope │    │ ML-DSA Signature │    │ Node-3 (Port 9103)   │
+└──────────────────┘    │ Zeroization Gate │    │ Node-4 (Port 9104)   │
+                        └──────────────────┘    └──────────┬───────────┘
+                                                           │
+                                                           ▼ (Upon Leak)
+                                                ┌──────────────────────┐
+                                                │ INVESTIGATOR STATION │
+                                                │ Blind DWT-DCT Extract│
+                                                │ Merkle Verification  │
+                                                │ 9-State Adjudication │
+                                                │ Standalone .tcproof  │
+                                                └──────────────────────┘
 ```
 
 ---
 
-## Current Status
-* [x] **Phase 2: Post-Quantum Identity & Key Management Subsystem:**
-  * **NIST FIPS 203 (ML-KEM-768):** Key encapsulation ($pk=1,184\text{B}, sk=2,400\text{B}, c=1,088\text{B}, ss=32\text{B}$) with implicit rejection.
-  * **NIST FIPS 204 (ML-DSA-65):** Digital signatures ($pk=1,952\text{B}, sk=4,032\text{B}, \sigma=3,309\text{B}$) with deterministic verification.
-  * **Strict Role Separation:** Type-safe separation preventing cross-algorithm key substitution.
-  * **Offline Root CA:** Air-gapped trust anchor issuing ML-DSA-65 identity certificates.
-  * **PQC Identity Certificates:** Versioned RFC 8785 canonical identity envelopes with 12-point offline validation.
-  * **Key Lifecycle & Rotation:** Monotonic state machine preventing un-revocation; key rotation preserving historical event verifiability.
-  * **Argon2id Keystore:** Password-derived encryption ($m=64\text{MB}, t=3, p=4$) + AES-256-GCM with canonical AAD metadata binding and Windows `icacls` permission hardening.
-  * **Device Enrollment:** Workstation enrollment with hardware telemetry collection.
-* [x] **Phase 3: Encrypted Document Distribution Subsystem (.tcdist):**
-  * **Single-Content Encryption:** Document encrypted ONCE per distribution using AES-256-GCM with fresh 256-bit CEK and 96-bit nonce.
-  * **Multi-Recipient ML-KEM-768 Encapsulation:** Independent encapsulation per recipient, derived via HKDF-SHA256 with strict domain separation.
-  * **Deterministic .tcdist Binary Container:** `TCDIST01` header, RFC 8785 canonical metadata AAD binding, SHA3-256 body checksum, and `TCDISTEND` footer.
-  * **17-Point Offline Validation Pipeline:** Fail-closed validation verifying dimensions, algorithm parameters, and body checksums before any cryptographic operation.
-  * **Controlled In-Memory Decryption:** `SecureDocumentBuffer` with active zeroization preventing unwatermarked document leaks to disk.
-* [x] **Phase 4: Robust Forensic Watermark Engine:**
-  * **2D Haar DWT + 8x8 Block DCT:** Transform-domain embedding across horizontal (HL) and vertical (LH) mid-frequency bands (zigzag indices 1..10) guaranteeing exact invertibility (MSE < 1e-12).
-  * **Bipolar Spread-Spectrum Modulation:** Pseudo-random carrier derived from SHA3-256 seed with spreading gain $L = 264\text{ chips/bit}$. Zero reliance on insecure PRNGs.
-  * **Systematic Reed-Solomon RS(32,16) over $\text{GF}(2^8)$:** 2-way interleaved blocks encoding 32-byte payload to 64 bytes (512 bits); corrects up to 16 byte errors (bursts up to 16 bytes).
-  * **256-Bit Cryptographic Payload:** Exactly 32 bytes ($1\text{B version} + 16\text{B WatermarkID} + 8\text{B session\_tag} + 5\text{B doc\_binding} + 2\text{B CRC-16}$). Zero plaintext PII.
-  * **Blind Extraction & Multi-Page Consistency:** Original document is NOT required for extraction. Cross-page conflict detection triggers fail-closed `AMBIGUOUS` state upon page splicing.
-  * **Lossless PDF Re-Assembly:** FlateDecode (zlib) streams guarantee 0.0 pixel quantization distortion.
-  * **Performance & Fidelity:** Extraction latency $336.72\text{ ms/page}$ ($\le 3.5\text{s}$ target), $\text{PSNR} \ge 44.33\text{ dB}$, $\text{SSIM} \ge 0.978$.
-  * **Quality Gates:** 269 passing tests (100%), 0 flake8 errors, automated robustness attack matrix.
-* [x] **Phase 5: Recipient-Side Attribution Pipeline & Signed Decryption Events:**
-  * **Atomic Decryption Pipeline:** Strict execution order (`DECRYPT` -> `CREATE SESSION` -> `CREATE UNIQUE WATERMARK` -> `EMBED WATERMARK` -> `BUILD CANONICAL EVENT` -> `SIGN EVENT WITH RECIPIENT ML-DSA-65` -> `SUBMIT LEDGER TX` -> `CONFIRM COMMIT` -> `RELEASE GATE` -> `ZEROIZE`).
-  * **Zero Unwatermarked Plaintext Leakage:** Plaintext and recovered CEK are processed strictly in controlled memory buffers and zeroized in `finally:` blocks.
-  * **Dynamic Ephemeral Identifiers:** Cryptographically independent 128-bit `SessionID` and `WatermarkID` generated per decryption; no reuse across sessions.
-  * **RFC 8785 Canonical DecryptionEvent:** Strongly-typed model serialized deterministically with SHA3-256 event digest and Base64-encoded NIST FIPS 204 ML-DSA-65 digital signature.
-  * **Cryptographic Identity Anchor:** Decryption events are signed exclusively by the recipient's authorized private key with strict `KeyPurpose.EVENT_SIGNING` enforcement.
-  * **DecryptionEventLedger Protocol & In-Memory Adapter:** Strict ledger interface with anti-replay detection on `EventID`, `SessionID`, `WatermarkID`, and `(DocumentID, SessionID)`.
-  * **Centralized DocumentReleaseGate:** Fail-closed gate evaluating watermark integrity, event signature, certificate chain, and ledger finality (`RELEASE_ALLOWED` vs `RELEASE_DENIED`).
-  * **CLI & API Integration:** Commands for offline package validation, decryption simulation, event inspection, canonicalization, and verification.
-* [x] **Phase 6 / 7: Permissioned Distributed Ledger & BFT Consensus Subsystem:**
-  * **4-Node BFT Replicated State Machine:** Fault tolerance $n=4, f=1$, generic quorum $Q = 2f+1 = 3$ votes.
-  * **Deterministic Consensus Lifecycle:** Tendermint-inspired round progression (`PROPOSE` -> `PREVOTE` -> `PRECOMMIT` -> `COMMIT`).
-  * **Deterministic Genesis & Proposer Selection:** Canonical genesis hash (`tracecrypt:genesis:`) and round-robin proposer selection based purely on height, round, and active validator set.
-  * **Cryptographic Identity Separation:** Validator consensus keys (`KeyPurpose.CONSENSUS_VALIDATION`) are cryptographically isolated from recipient signing keys (`KeyPurpose.DIGITAL_SIGNATURE`).
-  * **Typed & Replay-Protected Messages:** `VoteMessage` and `CommitCertificate` bind `chain_id`, `height`, `round`, `vote_type`, and `block_hash` under explicit domain separators.
-  * **Transaction Pool & Anti-Replay:** Authoritative tracking and deduplication on `EventID`, `SessionID`, `WatermarkID`, and `TransactionID`. Deterministic transaction ordering by `(submitted_at, transaction_id)`.
-  * **Binary Merkle Transaction Tree:** Deterministic SHA3-256 Merkle tree committing to `transaction_root`. Standalone $O(\log N)$ inclusion proof generation and independent verification without database access.
-  * **Canonical State Root:** Recomputed state roots commit to logical state entries, completely decoupled from physical SQLite storage layouts.
-  * **SQLite WAL Storage & Tamper Detection:** Persistence with startup chain verification, cross-verifying raw SQL columns against canonical header commitments to detect database modifications.
-  * **State Synchronization Catch-Up Protocol:** Lagging or newly restarted nodes synchronize missing blocks with independent cryptographic verification.
-  * **Byzantine Fault Handling:** Conflicting proposals and equivocation trigger `ByzantineFaultDetected` and compile self-authenticating `ByzantineEvidence`.
-  * **2+2 Partition Safety:** Network splits prevent conflicting finality; consensus resumes upon partition healing.
-  * **100% Air-Gapped LAN Networking:** Length-prefixed framing with SHA3-256 checksums over TCP between configured static peers; zero DNS, external RPC, or cloud dependencies.
-  * **CLI & API Integration:** Complete `tracecrypt ledger` commands (`init`, `start`, `status`, `blocks`, `block`, `verify`, `tx`, `event`, `watermark`, `proof`, `validators`) and REST endpoints.
-  * **Cluster Runner:** `scripts/run_ledger_cluster.py` provisions and manages local 4-validator deployments.
-* [x] **Phase 8: Forensic Investigation Engine, Blind Watermark Extraction & Deterministic Attribution:**
-  * **Zero-Knowledge Blind Extraction:** Blind 2D Haar DWT + 8x8 block DCT extraction requiring neither the original document nor candidate recipient keys.
-  * **Systematic Reed-Solomon RS(32,16) Recovery:** Complete correction of up to 8 symbol errors in GF(2^8) with 16-bit CRC-16 payload integrity verification.
-  * **Multi-Page Consistency & Splice Isolation:** Independent per-page extraction with aggregation detecting conflicting splices and triggering fail-closed `AMBIGUOUS` state.
-  * **12-Point Cryptographic Verification Pipeline:** Verification of Merkle inclusion proofs, block header hashes, chain linkage, BFT commit certificate quorum, 11-point offline recipient certificate validity, RFC 8785 canonical event digest matching, NIST FIPS 204 ML-DSA-65 signature mathematical verification, and 40-bit document binding.
-  * **Exactly 9 Closed Verdict States:** Strict precedence state machine (`AMBIGUOUS`, `UNVERIFIABLE`, `CORRUPTED_WATERMARK`, `INVALID_WATERMARK`, `NOT_FOUND`, `LEDGER_INVALID`, `SIGNATURE_INVALID`, `DOCUMENT_MISMATCH`, `VERIFIED`). Zero subjective confidence scores or probabilistic heuristic overrides.
-  * **Standalone Proof Bundle (.tcproof):** Self-contained cryptographic proof container with SHA3-256 canonical digest verifiable independently via `StandaloneProofVerifier` without workstation database access.
-  * **Tamper-Evident Forensic Reporting:** Machine-readable canonical JSON and publication-grade PDF reports with per-page evidence tables and explicit non-repudiation boundary disclosure.
-  * **Full Subsystem Integration:** Unified CLI commands (`tracecrypt forensic investigate`, `verify`, `extract`) and FastAPI REST endpoints (`POST /api/v1/forensics/investigate`, `POST /api/v1/forensics/verify-proof`).
-  * **Empirical NFR-005 Compliance:** Investigation latency $\le 1.01\text{ s/page}$ on benchmarked 1, 5, and 10-page documents (well under the $\le 3.5\text{ s/page}$ limit).
+## 3. Operational Command-Line Interface
 
----
+TraceCrypt provides a unified production CLI entrypoint accessible via `tracecrypt` (or `python -m tracecrypt`):
 
-## Quickstart (Development & Testing)
-
-### 1. Environment Verification
+### Diagnostic & System Health
 ```bash
-python -m tracecrypt doctor
-python -m tracecrypt ca status
+# Verify air-gapped system readiness across all 9 operational categories
+tracecrypt doctor
+
+# Run full release smoke test across all 11 subsystem stages
+tracecrypt smoke-test
+
+# Display platform, post-quantum baseline, and protocol versioning
+tracecrypt version
 ```
 
-### 2. Initialize Offline Root CA
+### Identity & Certificate Authority
 ```bash
-python -m tracecrypt ca init --ca-id "ca-root-01" --passphrase "SecretMasterPass123!"
+# Initialize Root CA
+tracecrypt ca init --ca-id ca-root-primary --passphrase <MASTER_PASSPHRASE>
+
+# Generate certified recipient credentials
+tracecrypt identity generate --owner-id rcp-AGENT-ALPHA --passphrase <KEYSTORE_PASS> --ca-passphrase <CA_PASS>
+
+# Inspect certificate details and public key fingerprint
+tracecrypt identity inspect --recipient-id rcp-AGENT-ALPHA
 ```
 
-### 3. Generate Post-Quantum Identity & Certificate
+### Encryption, Packaging & Decryption
 ```bash
-python -m tracecrypt identity generate --owner-id "rcp-agent-alpha" --passphrase "AgentKeyPass123!" --ca-passphrase "SecretMasterPass123!"
+# Encrypt and package document for authorized recipient(s)
+tracecrypt encrypt --input briefing.pdf --recipient-cert certs/agent_alpha.json --output briefing.tcdist
+
+# Validate .tcdist package offline (17-point structural & cryptographic check)
+tracecrypt document validate briefing.tcdist
 ```
 
-### 4. Package Encrypted Document (.tcdist)
+### Ledger & Validator Cluster Administration
 ```bash
-# Calculate integrity hash
-python -m tracecrypt document hash classified_briefing.pdf
+# Bootstrap 4-node reference BFT ledger cluster
+python scripts/bootstrap_four_node_ledger.py --cluster-dir deployment/validator/cluster
 
-# Package document for authorized recipients
-python -m tracecrypt document package \
-    --input classified_briefing.pdf \
-    --output classified_briefing.tcdist \
-    --recipient rcp-agent-alpha
+# Inspect cluster consensus state across all nodes
+tracecrypt ledger status --cluster-dir deployment/validator/cluster
 
-# Validate container offline (17-point verification)
-python -m tracecrypt document validate classified_briefing.tcdist
-
-# Inspect recipient envelopes in package
-python -m tracecrypt document recipients classified_briefing.tcdist
+# Verify cryptographic chain integrity from genesis to tip
+tracecrypt ledger verify --cluster-dir deployment/validator/cluster
 ```
 
-### 5. Forensic Invisible Watermarking
+### Forensic Investigation & Independent Attribution
 ```bash
-# Embed forensic watermark (test/dev mode)
-python -m tracecrypt watermark embed --input sample.pdf --output sample.watermarked.pdf --strength 8.0
+# Ingest leaked artifact and execute full deterministic investigation
+tracecrypt investigate leaked_scan.pdf \
+    --node-dir deployment/validator/cluster/node-1 \
+    --output-report reports/forensic_report.pdf \
+    --output-proof reports/case_proof.tcproof
 
-# Blindly extract watermark from leaked document (no original needed)
-python -m tracecrypt watermark extract sample.watermarked.pdf
-
-# Run local latency and fidelity benchmark
-python -m tracecrypt watermark benchmark
-
-# Execute simulated forensic attack matrix
-python -m tracecrypt watermark attack-test
+# Independently verify standalone proof bundle (.tcproof) without database connection
+tracecrypt verify-bundle reports/case_proof.tcproof
 ```
 
-### 6. Forensic Investigation & Independent Attribution
+### Backup, Database & Upgrades
 ```bash
-# Blindly investigate leaked artifact against committed BFT ledger
-python -m tracecrypt forensic investigate leaked_evidence.pdf \
-    --suspect-doc-hash "sha3-256:..." \
-    --proof-out case_proof.tcproof \
-    --pdf-out forensic_report.pdf
+# Create cryptographically verified .tcbackup archive
+tracecrypt backup create --output backups/backup_20260928.tcbackup
 
-# Verify standalone proof bundle (.tcproof) independently from first principles
-python -m tracecrypt forensic verify case_proof.tcproof
+# Verify backup checksums and component integrity
+tracecrypt backup verify backups/backup_20260928.tcbackup
 
-# Extract raw watermark payload without ledger verification
-python -m tracecrypt forensic extract leaked_evidence.pdf
-```
+# Transactional database schema check and migration
+tracecrypt database check
+tracecrypt database migrate
 
-### 7. Run Complete Test Suite & Forensic Benchmarks
-```bash
-# Run complete forensic investigation test suite
-python -m pytest tests/forensics/ -v
-
-# Run full project test suite
-python -m pytest
+# Offline system upgrade management
+tracecrypt upgrade check 1.0.0
+tracecrypt upgrade verify
 ```
 
 ---
 
-## Governance & Security Rules
+## 4. Offline Installation & Air-Gap Verification
 
-All implementation in this repository is strictly bound by [PROJECT_CONTRACT.md](file:///C:/TraceCrypt/PROJECT_CONTRACT.md) and [SECURITY.md](file:///C:/TraceCrypt/SECURITY.md).
+### Clean Machine Installation
+1. Copy the release bundle (`TraceCrypt-1.0.0-Windows-x64-portable.zip` or `TraceCrypt-1.0.0-offline-deployment-bundle.zip`) to the target machine via approved optical disc or hardware-write-blocked media.
+2. Extract the archive into `C:\TraceCrypt`.
+3. Execute the automated air-gapped installation script:
+   ```cmd
+   scripts\offline_install.bat
+   ```
+4. Run the automated air-gap and egress verification script:
+   ```cmd
+   python scripts/verify_airgap.py
+   ```
+5. Confirm operational readiness:
+   ```cmd
+   tracecrypt doctor
+   ```
+
+---
+
+## 5. Demonstration & Automated Verification
+
+TraceCrypt includes a 23-step end-to-end demonstration workflow that runs completely offline:
+```cmd
+python scripts/demo_full_workflow.py
+```
+This tests every stage from Root CA initialization through encryption, decapsulation, watermarking, signing, BFT ledger commit, exfiltration simulation, blind extraction, Merkle verification, forensic verdict derivation, and standalone independent verification.
+
+---
+
+## 6. Documentation Index
+
+Comprehensive engineering, architectural, operational, and security documentation is located in the `docs/` directory:
+
+| Document | Purpose |
+|:---|:---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Complete system architecture, trust boundaries, data flow, key flow, and ledger diagrams |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Step-by-step air-gapped deployment for CA, Sender, Recipient, Validators, and Investigator |
+| [docs/OFFLINE_INSTALLATION.md](docs/OFFLINE_INSTALLATION.md) | Offline installation, dependency bundles, and zero-egress verification procedures |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Administrator and operator runbooks for daily maintenance and cluster operations |
+| [docs/UPGRADE.md](docs/UPGRADE.md) | Offline version upgrade, pre-upgrade snapshots, database migrations, and rollback |
+| [docs/BACKUP_RECOVERY.md](docs/BACKUP_RECOVERY.md) | `.tcbackup` management and disaster recovery runbooks across 8 critical scenarios |
+| [docs/SECURITY.md](docs/SECURITY.md) | Security model, zeroization invariants, Argon2id parameters, and ACL lockdowns |
+| [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) | Adversary models, attack vectors, mitigations, and formal security boundaries |
+| [docs/FORENSIC_WORKFLOW.md](docs/FORENSIC_WORKFLOW.md) | Blind extraction, 9-state verdict state machine, and `.tcproof` structure |
+| [docs/PROTOCOL_VERSIONING.md](docs/PROTOCOL_VERSIONING.md) | Semantic protocol versioning rules and cross-version compatibility matrix |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Diagnosis and remediation for common environmental and consensus faults |
+| [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md) | Third-party software licenses and intellectual property notices |
+| [docs/RELEASE_TRACEABILITY.md](docs/RELEASE_TRACEABILITY.md) | Requirements traceability matrix mapping FR, NFR, SEC, R, and T items to tests |
+| [CHANGELOG.md](CHANGELOG.md) | Semantic release notes and historical milestone tracking |
+
+---
+
+## 7. License
+
+Proprietary / Internal Operational License. All rights reserved.
+See [LICENSE](LICENSE) and [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md) for full terms.

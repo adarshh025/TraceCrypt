@@ -308,8 +308,12 @@ class StandaloneProofVerifier:
             prev_h = GENESIS_PREVIOUS_HASH
             for c in bundle.chain_of_custody:
                 entry = c
+                act_raw = entry.get("action")
+                act_str = act_raw.value if hasattr(act_raw, "value") else str(act_raw)
+                if act_str.startswith("CustodyAction."):
+                    act_str = act_str.split(".", 1)[1]
                 ctx = (
-                    f"tracecrypt:custody:v1:{entry['sequence_index']}:{entry['action']}:{entry['actor_id']}:"
+                    f"tracecrypt:custody:v1:{entry['sequence_index']}:{act_str}:{entry['actor_id']}:"
                     f"{entry['timestamp']}:{entry['evidence_hash']}:{entry['previous_action_hash']}"
                 ).encode("utf-8")
                 exp_h = Hasher.digest_bytes(ctx, HashAlgorithm.SHA3_256.value).formatted

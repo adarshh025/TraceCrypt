@@ -1,0 +1,201 @@
+{
+  "product": "TraceCrypt",
+  "version": "1.0.0",
+  "protocol_version": "1.0.0",
+  "ledger_version": "1",
+  "database_schema_version": "1",
+  "watermark_format_version": "1",
+  "event_schema_version": "1",
+  "proof_format_version": "1",
+  "build_platform": "windows-amd64",
+  "python_version": "3.11.9",
+  "created_at": "2026-09-28T00:00:00Z",
+  "airgap_certified": true,
+  "cryptographic_baseline": {
+    "kem": "NIST FIPS 203 ML-KEM-768",
+    "dsa": "NIST FIPS 204 ML-DSA-65",
+    "symmetric": "AES-256-GCM",
+    "hashing": "NIST FIPS 202 SHA3-256",
+    "kdf": "Argon2id + HKDF-SHA256"
+  },
+  "artifacts": [
+    {
+      "name": "TraceCrypt-1.0.0-Windows-x64-portable.zip",
+      "type": "portable_distribution",
+      "size_bytes": 545656,
+      "sha256": "3652ff3a673b442eafe1f6acc7fb40ddbc209c5f3a2ccc21d78f67eb69867d4b",
+      "sha3_256": "sha3-256:52472e80934cefe3e8f97d254c642f42db3c6b292cde99cca376c118fe3363c4",
+      "platform": "windows-x64"
+    },
+    {
+      "name": "TraceCrypt-1.0.0-offline-deployment-bundle.zip",
+      "type": "offline_deployment_bundle",
+      "size_bytes": 150357,
+      "sha256": "f7a1a6f6c28fd6158d1ed3ed217579d9fd356929fbf398e9a2152f228de56e2c",
+      "sha3_256": "sha3-256:f5f96e312ba7ba1c7f529a8e599fff0cb202079abd2bc0e1d09c14f912183535",
+      "platform": "windows-x64"
+    }
+  ],
+  "dependencies": [
+    {
+      "package": "cryptography",
+      "version": "50.0.1",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "Apache-2.0 OR BSD-3-Clause",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    },
+    {
+      "package": "pydantic",
+      "version": "2.10.6",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "MIT",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    },
+    {
+      "package": "numpy",
+      "version": "2.4.6",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    },
+    {
+      "package": "scipy",
+      "version": "1.17.1",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "Copyright (c) 2001-2002 Enthought, Inc. 2003, SciP",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    },
+    {
+      "package": "opencv-python",
+      "version": "5.0.0.93",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "Apache 2.0",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    },
+    {
+      "package": "pillow",
+      "version": "12.2.0",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "MIT-CMU",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    },
+    {
+      "package": "fastapi",
+      "version": "0.115.0",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "Apache-2.0 / BSD / MIT",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    },
+    {
+      "package": "uvicorn",
+      "version": "0.34.0",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "BSD-3-Clause",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    },
+    {
+      "package": "aiosqlite",
+      "version": "0.22.1",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "Apache-2.0 / BSD / MIT",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    },
+    {
+      "package": "sqlalchemy",
+      "version": "2.0.22",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "MIT",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    },
+    {
+      "package": "pdfminer.six",
+      "version": "20260107",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "MIT",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    },
+    {
+      "package": "reportlab",
+      "version": "5.0.1",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "BSD license (see license.txt for details), Copyrig",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    },
+    {
+      "package": "pypdf",
+      "version": "6.19.0",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "BSD-3-Clause",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    },
+    {
+      "package": "pypdfium2",
+      "version": "5.13.0",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "BSD-3-Clause, Apache-2.0, dependency licenses",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    },
+    {
+      "package": "dilithium-py",
+      "version": "1.4.0",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "MIT",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    },
+    {
+      "package": "mlkem",
+      "version": "0.0.3",
+      "platform": "windows",
+      "architecture": "amd64",
+      "source": "pypi-verified-offline-vendor",
+      "license": "Apache-2.0 / BSD / MIT",
+      "required_for": "Core forensic cryptographic attribution runtime",
+      "airgap_safe": true
+    }
+  ]
+}

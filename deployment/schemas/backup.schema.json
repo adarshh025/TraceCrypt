@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TraceCryptBackupManifest",
+  "type": "object",
+  "required": [
+    "backup_id",
+    "timestamp",
+    "application_version",
+    "protocol_version",
+    "ledger_version",
+    "database_schema_version",
+    "components",
+    "description"
+  ],
+  "properties": {
+    "backup_id": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+    "timestamp": { "type": "string" },
+    "application_version": { "type": "string" },
+    "protocol_version": { "type": "string" },
+    "ledger_version": { "type": "integer" },
+    "database_schema_version": { "type": "integer" },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["archive_path", "original_path", "size_bytes", "sha256", "sha3_256", "category"],
+        "properties": {
+          "archive_path": { "type": "string" },
+          "original_path": { "type": "string" },
+          "size_bytes": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "sha3_256": { "type": "string", "pattern": "^sha3-256:[a-f0-9]{64}$" },
+          "category": { "type": "string", "enum": ["ledger", "database", "certificates", "reports", "keystore", "other"] }
+        }
+      }
+    },
+    "description": { "type": "string" }
+  }
+}

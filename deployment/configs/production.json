@@ -1,0 +1,33 @@
+{
+  "$schema": "https://tracecrypt.internal/schemas/config-v1.json",
+  "system": {
+    "mode": "PRODUCTION",
+    "data_dir": "data",
+    "log_level": "INFO"
+  },
+  "airgap": {
+    "enforce_airgap": true,
+    "allow_dns": false,
+    "allowed_hosts": ["127.0.0.1", "localhost", "::1"]
+  },
+  "crypto": {
+    "kem_algorithm": "ML-KEM-768",
+    "dsa_algorithm": "ML-DSA-65",
+    "hash_algorithm": "sha3-256",
+    "argon2_memory_mb": 64,
+    "argon2_iterations": 3,
+    "argon2_parallelism": 4
+  },
+  "ledger": {
+    "cluster_id": "tracecrypt-lan-1",
+    "validator_count": 4,
+    "block_finality_seconds": 1.0,
+    "rpc_host": "127.0.0.1",
+    "rpc_port": 8545
+  },
+  "logging": {
+    "level": "INFO",
+    "json_format": true,
+    "redact_secrets": true
+  }
+}

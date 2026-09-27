@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tracecrypt"
-version = "0.1.0"
+version = "1.0.0"
 description = "Offline Forensic Document Attribution Platform"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "NOT YET SELECTED" }
+license = { text = "Proprietary / Internal Legal License Pending" }
 authors = [
     { name = "TraceCrypt Core Architecture Team" }
 ]
@@ -24,7 +24,7 @@ keywords = [
     "fips-204"
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Information Technology",
     "Intended Audience :: Legal Industry",
     "Topic :: Security :: Cryptography",

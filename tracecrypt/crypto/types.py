@@ -44,9 +44,11 @@ class MLKEMPublicKey:
     EXPECTED_LENGTH: ClassVar[int] = 1184
     ALGORITHM: ClassVar[str] = "ML-KEM-768"
 
-    def __init__(self, key_bytes: bytes) -> None:
+    def __init__(self, key_bytes: Union[bytes, bytearray, MLKEMPublicKey]) -> None:
         self._key_bytes = b""
         self._fingerprint = ""
+        if isinstance(key_bytes, MLKEMPublicKey):
+            key_bytes = key_bytes.raw_bytes
         if not isinstance(key_bytes, (bytes, bytearray)):
             raise ValidationError(f"MLKEMPublicKey must be bytes, got {type(key_bytes).__name__}")
         if len(key_bytes) != self.EXPECTED_LENGTH:
@@ -105,8 +107,10 @@ class MLKEMPrivateKey:
     EXPECTED_LENGTH: ClassVar[int] = 2400
     ALGORITHM: ClassVar[str] = "ML-KEM-768"
 
-    def __init__(self, key_bytes: bytes) -> None:
+    def __init__(self, key_bytes: Union[bytes, bytearray, MLKEMPrivateKey]) -> None:
         self._key_bytes: Optional[bytearray] = None
+        if isinstance(key_bytes, MLKEMPrivateKey):
+            key_bytes = key_bytes.raw_bytes
         if not isinstance(key_bytes, (bytes, bytearray)):
             raise ValidationError(f"MLKEMPrivateKey must be bytes, got {type(key_bytes).__name__}")
         if len(key_bytes) != self.EXPECTED_LENGTH:
@@ -192,9 +196,11 @@ class MLDSAPublicKey:
     EXPECTED_LENGTH: ClassVar[int] = 1952
     ALGORITHM: ClassVar[str] = "ML-DSA-65"
 
-    def __init__(self, key_bytes: bytes) -> None:
+    def __init__(self, key_bytes: Union[bytes, bytearray, MLDSAPublicKey]) -> None:
         self._key_bytes = b""
         self._fingerprint = ""
+        if isinstance(key_bytes, MLDSAPublicKey):
+            key_bytes = key_bytes.raw_bytes
         if not isinstance(key_bytes, (bytes, bytearray)):
             raise ValidationError(f"MLDSAPublicKey must be bytes, got {type(key_bytes).__name__}")
         if len(key_bytes) != self.EXPECTED_LENGTH:
@@ -250,8 +256,10 @@ class MLDSAPrivateKey:
     EXPECTED_LENGTH: ClassVar[int] = 4032
     ALGORITHM: ClassVar[str] = "ML-DSA-65"
 
-    def __init__(self, key_bytes: bytes) -> None:
+    def __init__(self, key_bytes: Union[bytes, bytearray, MLDSAPrivateKey]) -> None:
         self._key_bytes: Optional[bytearray] = None
+        if isinstance(key_bytes, MLDSAPrivateKey):
+            key_bytes = key_bytes.raw_bytes
         if not isinstance(key_bytes, (bytes, bytearray)):
             raise ValidationError(f"MLDSAPrivateKey must be bytes, got {type(key_bytes).__name__}")
         if len(key_bytes) != self.EXPECTED_LENGTH:

@@ -1,33 +1,53 @@
 # Changelog
 
-All notable technical changes to the TraceCrypt forensic document attribution platform will be documented in this file.
+All notable changes to the TraceCrypt project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [1.0.0-rc1] - 2026-09-27
+## [1.0.0] - 2026-09-28
 
-### Added
-- **NIST FIPS 203 Post-Quantum KEM**: Integrated standardized ML-KEM-768 key encapsulation mechanism for multi-recipient document encryption key distribution (`tracecrypt.crypto.pqc_kem`).
-- **NIST FIPS 204 Post-Quantum Digital Signatures**: Integrated standardized ML-DSA-65 digital signature provider for Root CA certificate issuance, validator consensus voting, and canonical event attribution signing (`tracecrypt.crypto.pqc_dsa`).
-- **Offline Root Certificate Authority**: Air-gapped master identity authority issuing tamper-evident certificates with role-based extensions (RECIPIENT, VALIDATOR, INVESTIGATOR) and 12-point offline verification (`tracecrypt.identity.ca`).
-- **Authenticated Document Packaging (.tcdist)**: Versioned binary container implementing AES-256-GCM authenticated encryption, multi-recipient ML-KEM key wrapping, and 17-point structural offline validation (`tracecrypt.document.package`).
-- **DWT-DCT Frequency-Domain Watermarking**: Multi-band discrete wavelet transform (Haar DWT) combined with block-level discrete cosine transform (DCT) and Reed-Solomon RS(32,16) forward error correction (`tracecrypt.watermark.embedder`).
-- **Deterministic 9-Verdict Forensic Engine**: Centralized canonical verdict state model (`VERIFIED`, `NOT_FOUND`, `INVALID_WATERMARK`, `SIGNATURE_INVALID`, `LEDGER_INVALID`, `DOCUMENT_MISMATCH`, `CORRUPTED_WATERMARK`, `AMBIGUOUS`, `UNVERIFIABLE`) with blind signal extraction and document binding verification (`tracecrypt.forensics.engine`).
-- **Portable Cryptographic Proof Bundles (.tcproof)**: Tamper-evident standalone evidence containers embedding canonical event, Merkle inclusion proof, commit certificate, and Root CA certificate chain, verifiable independently (`tracecrypt.forensics.proof_bundle`).
-- **Permissioned BFT Distributed Ledger**: 4-node Byzantine fault-tolerant consensus state machine with monotonic block height, parent hash chaining, Merkle tree root commitments, and SQLite WAL persistence (`tracecrypt.ledger.consensus`).
-- **Air-Gap Operational Security Guard**: `AirGapGuard` runtime socket interception preventing external DNS, HTTP, HTTPS, or remote network socket calls (`tracecrypt.security.airgap`).
-- **System Doctor & Diagnostics**: CLI `tracecrypt doctor` and `tracecrypt validate` diagnostic commands verifying local toolchain, packages, and cryptographic sanity.
-- **Reproducible Offline Benchmark Harness**: Automated benchmark suite (`scripts/benchmark_all.py`) measuring decryption latency, forensic extraction throughput, BFT consensus finality, perceptual visual fidelity (PSNR/SSIM), and attack survivability matrix.
-- **Offline Windows Deployment Suite**: Automated scripts (`scripts/offline_install.bat`, `scripts/offline_verify.bat`, `scripts/release_gate.bat`) for zero-internet enclave provisioning.
+### Initial Production Release (Air-Gapped Forensic Document Attribution)
 
-### Changed
-- Refined deskew candidate search in watermark extraction to include bidirectional angles and integer rotation candidates, ensuring reliable recovery across rotation distortions.
-- Enforced strict package discovery in `pyproject.toml` to prevent setuptools scanning non-code directories.
+#### Added
+- **Post-Quantum Cryptographic Primaries:**
+  - NIST FIPS 203 ML-KEM-768 for quantum-resistant key encapsulation and document key wrapping.
+  - NIST FIPS 204 ML-DSA-65 for quantum-resistant digital signatures across canonical decryption events.
+  - AES-256-GCM authenticated document encryption with unique 96-bit nonces.
+  - SHA3-256 and SHA-256 dual cryptographic hashing pipelines.
+- **Offline PKI Engine:**
+  - Air-gapped Root Certificate Authority with offline key generation and certificate issuance.
+  - Strict `KeyPurpose` enforcement (`KEY_ENCAPSULATION`, `DIGITAL_SIGNATURE`, `CA_SIGNING`).
+  - CRL generation, revocation tracking, and cryptographic certificate chain validation.
+- **Frequency-Domain Forensic Watermarking:**
+  - 2-level DWT-DCT luminance-channel embedding algorithm.
+  - Reed-Solomon $(N, K)$ error correction coding over $GF(2^8)$ for noise and distortion resilience.
+  - High fidelity preservation exceeding 38 dB PSNR and 0.98 SSIM.
+  - Blind extraction pipeline operating without access to original un-watermarked documents.
+- **Immutable Ledger & BFT Consensus:**
+  - Byzantine Fault Tolerant (PBFT) consensus engine supporting $n=4, f=1$ validator nodes.
+  - RFC 8785 JSON Canonicalization Scheme (JCS) deterministic event formatting.
+  - Cryptographic block header chaining with binary Merkle transaction trees.
+  - Merkle inclusion audit path generation and verification.
+- **Forensic Attribution Engine:**
+  - Formally validated 9-state forensic verdict matrix (`V1` Affirmative Attribution to `V9` Insufficient Evidence).
+  - Court-admissible forensic PDF and JSON evidence reports with complete chain of custody.
+  - Self-contained portable evidence verifier (`tracecrypt.forensics.standalone_verifier`) executable from offline storage.
+- **Production Packaging & Disaster Recovery:**
+  - `DatabaseMigrationManager` for transactional SQLite schema versioning.
+  - `BackupManager` creating verified `.tcbackup` archives with dual-hash manifests and path-traversal protection.
+  - `UpgradeManager` with automated pre-upgrade snapshots, migration application, and rollback.
+  - Complete CLI suite with `tracecrypt doctor` and `tracecrypt smoke-test` (11 stages).
+  - Role-separated deployment blueprints for CA, Sender, Recipient, Validator, and Investigator.
+  - Automated 4-node cluster bootstrapper (`scripts/bootstrap_four_node_ledger.py`).
+  - Formal air-gap compliance verifier (`scripts/verify_airgap.py`).
+  - End-to-end 23-step demonstration script (`scripts/demo_full_workflow.py`).
+  - Portable release zip archives and dual-hash manifests (`release/SHA256SUMS`, `release/SHA3SUMS`).
 
-### Security Hardening
-- Replay attack defenses across mempool and consensus state indices.
-- Secret zeroization and regex-based redaction filter (`LogFilter`) across all log levels.
-- Monotonic disk-level checkpointing preventing SQLite database rollback attacks.
+#### Security
+- Zero network egress verified by static AST analysis and dynamic socket interception.
+- Strict isolation of private key stores across deployment roles.
+- Safe uninstaller preventing unintended data loss of evidence or ledger databases.
+- Memory zeroization for sensitive key buffers.

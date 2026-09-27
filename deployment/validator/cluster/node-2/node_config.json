@@ -1,0 +1,23 @@
+{
+  "node_name": "node-2",
+  "chain_id": "tracecrypt-airgap-1",
+  "validator_id": "val-2b0e43af61a785ab57febc51fd73b8d4",
+  "listen_host": "127.0.0.1",
+  "listen_port": 9102,
+  "peers": [
+    [
+      "127.0.0.1",
+      9101
+    ],
+    [
+      "127.0.0.1",
+      9103
+    ],
+    [
+      "127.0.0.1",
+      9104
+    ]
+  ],
+  "protocol_version": "1.0.0",
+  "application_version": "1.0.0"
+}
