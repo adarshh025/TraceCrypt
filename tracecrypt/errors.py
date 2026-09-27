@@ -68,6 +68,11 @@ class ForensicError(TraceCryptError):
     pass
 
 
+class ForensicEvidenceError(ForensicError):
+    """Raised when evidence ingestion, file reading, or format parsing fails."""
+    pass
+
+
 class AirGapViolation(SecurityError):
     """Raised when forbidden network activity (external socket, DNS, HTTP) is attempted."""
     pass

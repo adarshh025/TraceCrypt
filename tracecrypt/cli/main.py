@@ -312,6 +312,32 @@ def build_parser() -> argparse.ArgumentParser:
     led_val = ledger_sub.add_parser("validators", help="List active consensus validators and voting weights")
     led_val.add_argument("--node-dir", default=None, help="Node directory")
 
+    # Command: forensic
+    forensic_parser = subparsers.add_parser(
+        "forensic", help="Forensic investigation, blind extraction, and proof verification"
+    )
+    forensic_sub = forensic_parser.add_subparsers(dest="subcommand", help="Forensic operations")
+
+    f_inv = forensic_sub.add_parser("investigate", help="Investigate a leaked document artifact")
+    f_inv.add_argument("file", help="Path to leaked PDF or image artifact")
+    f_inv.add_argument("--case-id", default=None, help="Case identifier")
+    f_inv.add_argument("--case-name", default="Forensic Attribution Inquiry", help="Case name")
+    f_inv.add_argument("--doc-hash", default=None, help="Optional known document hash hint")
+    f_inv.add_argument("--output-report", default=None, help="Optional output path for PDF forensic report")
+    f_inv.add_argument("--output-proof", default=None, help="Optional output path for .tcproof bundle")
+    f_inv.add_argument("--node-dir", default=None, help="Node ledger directory")
+    f_inv.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
+    f_ver = forensic_sub.add_parser("verify", help="Independently verify a standalone .tcproof proof bundle")
+    f_ver.add_argument("proof_file", help="Path to .tcproof bundle file")
+    f_ver.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
+    f_ext = forensic_sub.add_parser("extract", help="Blindly extract watermark signal and metadata from document")
+    f_ext.add_argument("file", help="Path to PDF or image artifact")
+    f_ext.add_argument("--doc-hash", default=None, help="Optional document hash hint")
+    f_ext.add_argument("--node-dir", default=None, help="Node ledger directory")
+    f_ext.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+
     return parser
 
 
@@ -1942,6 +1968,228 @@ def cmd_ledger_validators(args: argparse.Namespace) -> int:
 
 
 # -------------------------------------------------------------------------
+# Forensic Subsystem CLI Handlers
+# -------------------------------------------------------------------------
+
+def cmd_forensic_investigate(args: argparse.Namespace) -> int:
+    from tracecrypt.forensics.engine import ForensicInvestigationEngine
+    from tracecrypt.forensics.types import ForensicVerdict
+
+    evidence_path = Path(args.file)
+    if not evidence_path.exists():
+        print(f"Error: Evidence file not found at: {evidence_path}", file=sys.stderr)
+        return 1
+
+    db_path = _resolve_ledger_db(args)
+    storage = LedgerStorage(db_path) if db_path.exists() else None
+
+    engine = ForensicInvestigationEngine(ledger_storage=storage)
+
+    try:
+        inv = engine.investigate(
+            file_path=evidence_path,
+            case_id=args.case_id,
+            case_name=args.case_name,
+            suspect_document_hash=args.doc_hash,
+        )
+
+        if args.output_report:
+            report_path = Path(args.output_report)
+            engine.export_pdf_report(inv, report_path)
+            if not args.json:
+                print(f"Forensic PDF report exported to: {report_path}")
+
+        if args.output_proof:
+            proof_path = Path(args.output_proof)
+            engine.export_proof_bundle(inv, proof_path)
+            if not args.json:
+                print(f"Standalone .tcproof bundle exported to: {proof_path}")
+
+        if args.json:
+            print(inv.model_dump_json(indent=2))
+            return 0 if inv.verdict == ForensicVerdict.VERIFIED else 2
+
+        print("=" * 70)
+        print("          TRACECRYPT FORENSIC INVESTIGATION REPORT          ")
+        print("=" * 70)
+        print(f"Case ID           : {inv.case_id}")
+        print(f"Case Name         : {inv.case_name}")
+        print(f"Timestamp (UTC)   : {inv.investigation_started_at}")
+        print(f"Evidence File     : {evidence_path.name}")
+        print(f"Evidence SHA3-256 : {inv.evidence.sha3_256}")
+        print(f"MIME Type         : {inv.evidence.mime_type} ({inv.evidence.size_bytes} bytes)")
+        print(f"Total Pages       : {inv.evidence.page_count}")
+        print("-" * 70)
+
+        wm = inv.watermark_analysis
+        print("WATERMARK EXTRACTION & ERROR CORRECTION:")
+        print(f"  Signal Detected : {wm.detected}")
+        print(f"  Valid Extraction: {wm.valid_extraction}")
+        print(f"  Ambiguous Signal: {wm.ambiguous}")
+        print(f"  Pages Detected  : {len(wm.pages_detected)} of {inv.evidence.page_count}")
+        print(f"  Watermark ID    : {wm.recovered_watermark_id or 'None'}")
+        print(f"  Session ID      : {wm.recovered_session_id or 'None'}")
+        print(f"  Doc Binding Tag : {wm.recovered_doc_binding_tag or 'None'}")
+        print(f"  Max ECC Errors  : {wm.max_ecc_symbols_corrected} / 8 symbol capacity")
+        print("-" * 70)
+
+        led = inv.ledger_verification
+        print("REPLICATED BFT LEDGER VERIFICATION:")
+        print(f"  Transaction Found : {led.transaction_found}")
+        if led.transaction_found:
+            print(f"  Block Height      : {led.block_height}")
+            print(f"  Block Hash        : {led.block_hash}")
+            print(f"  Merkle Root       : {led.merkle_root}")
+            print(f"  Merkle Proof Valid: {led.merkle_proof_valid}")
+            print(f"  Commit Cert Valid : {led.commit_cert_valid}")
+        print("-" * 70)
+
+        ident = inv.identity_verification
+        print("RECIPIENT IDENTITY & POST-QUANTUM SIGNATURE:")
+        print(f"  Recipient Cert ID : {ident.recipient_cert_id or 'None'}")
+        print(f"  Subject Name      : {ident.subject_common_name or 'None'}")
+        print(f"  Cert Valid        : {ident.cert_valid}")
+        print(f"  Cert Revoked      : {ident.cert_revoked}")
+        print(f"  ML-DSA-65 Sig Valid: {ident.mldsa_signature_valid}")
+        print("-" * 70)
+
+        doc = inv.document_binding
+        print("CRYPTOGRAPHIC DOCUMENT BINDING:")
+        print(f"  Binding Matches   : {doc.binding_matches}")
+        print(f"  Expected Doc Hash : {doc.expected_doc_hash or 'None'}")
+        print("-" * 70)
+
+        print(f"FINAL DETERMINISTIC VERDICT: [{inv.verdict.value}]")
+        print("=" * 70)
+        print(inv.verdict_rationale)
+        print("=" * 70)
+
+        return 0 if inv.verdict == ForensicVerdict.VERIFIED else 2
+
+    except Exception as e:
+        print(f"Forensic investigation failed: {e}", file=sys.stderr)
+        return 1
+    finally:
+        if storage is not None:
+            storage.close()
+
+
+def cmd_forensic_verify(args: argparse.Namespace) -> int:
+    from tracecrypt.forensics.proof_bundle import ForensicProofBundle
+    from tracecrypt.forensics.standalone_verifier import StandaloneProofVerifier
+
+    proof_path = Path(args.proof_file)
+    if not proof_path.exists():
+        print(f"Error: Proof bundle file not found: {proof_path}", file=sys.stderr)
+        return 1
+
+    try:
+        bundle = ForensicProofBundle.load_file(proof_path)
+        verifier = StandaloneProofVerifier()
+        result = verifier.verify(bundle)
+
+        if args.json:
+            print(result.model_dump_json(indent=2))
+            return 0 if result.verified else 2
+
+        print("=" * 70)
+        print("      TRACECRYPT STANDALONE PROOF VERIFICATION REPORT      ")
+        print("=" * 70)
+        print(f"Proof File        : {proof_path.name}")
+        print(f"Bundle Digest     : {result.bundle_digest}")
+        print(f"Case ID           : {bundle.case_id}")
+        print(f"Evidence SHA3-256 : {bundle.evidence_sha3_256}")
+        print(f"Watermark ID      : {bundle.watermark_id or 'None'}")
+        print(f"Session ID        : {bundle.session_id or 'None'}")
+        print(f"Reported Verdict  : {bundle.verdict.value}")
+        print("-" * 70)
+        print("STANDALONE CRYPTOGRAPHIC CHECKS:")
+        print(f"  Bundle Integrity Check    : {'PASS' if result.bundle_integrity_valid else 'FAIL'}")
+        print(f"  Watermark Payload Format  : {'PASS' if result.watermark_valid else 'FAIL'}")
+        print(f"  Ledger Block Header Hash  : {'PASS' if result.block_hash_valid else 'FAIL'}")
+        print(f"  Merkle Inclusion Proof    : {'PASS' if result.merkle_proof_valid else 'FAIL'}")
+        print(f"  BFT Commit Certificate    : {'PASS' if result.commit_cert_valid else 'FAIL'}")
+        print(f"  Recipient Identity Cert   : {'PASS' if result.recipient_cert_valid else 'FAIL'}")
+        print(f"  Revocation Check (Epoch)  : {'PASS' if result.revocation_status_valid else 'FAIL'}")
+        print(f"  ML-DSA-65 Signature Match : {'PASS' if result.signature_valid else 'FAIL'}")
+        print(f"  Document Binding Match    : {'PASS' if result.document_binding_valid else 'FAIL'}")
+        print(f"  Verdict Derivation Match  : {'PASS' if result.verdict_consistent else 'FAIL'}")
+        print("-" * 70)
+        status_str = "[VERIFIED - ADMISSIBLE PROOF]" if result.verified else "[REJECTED - INVALID PROOF]"
+        print(f"OVERALL STANDALONE VERIFICATION: {status_str}")
+        print("=" * 70)
+        for check, detail in result.check_details.items():
+            print(f"  * {check:<28}: {detail}")
+        print("=" * 70)
+
+        return 0 if result.verified else 2
+
+    except Exception as e:
+        print(f"Standalone verification error: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_forensic_extract(args: argparse.Namespace) -> int:
+    from tracecrypt.forensics.engine import ForensicInvestigationEngine
+    from tracecrypt.forensics.ingestion import EvidenceIngestion
+
+    evidence_path = Path(args.file)
+    if not evidence_path.exists():
+        print(f"Error: Artifact file not found: {evidence_path}", file=sys.stderr)
+        return 1
+
+    db_path = _resolve_ledger_db(args)
+    storage = LedgerStorage(db_path) if db_path.exists() else None
+    engine = ForensicInvestigationEngine(ledger_storage=storage)
+
+    try:
+        evidence = EvidenceIngestion.ingest(evidence_path)
+        analysis = engine.extract_watermark(
+            evidence=evidence,
+            suspect_document_hash=args.doc_hash,
+        )
+
+        if args.json:
+            print(analysis.model_dump_json(indent=2))
+            return 0 if analysis.detected else 2
+
+        print("=" * 70)
+        print("          TRACECRYPT BLIND WATERMARK EXTRACTION             ")
+        print("=" * 70)
+        print(f"Artifact File     : {evidence_path.name}")
+        print(f"SHA3-256 Digest   : {evidence.sha3_256}")
+        print(f"Pages Inspected   : {evidence.page_count}")
+        print(f"Signal Detected   : {analysis.detected}")
+        print(f"Valid Extraction  : {analysis.valid_extraction}")
+        print(f"Ambiguous Signal  : {analysis.ambiguous}")
+        print(f"Recovered Watermark ID: {analysis.recovered_watermark_id or 'None'}")
+        print(f"Recovered Session ID  : {analysis.recovered_session_id or 'None'}")
+        print(f"Recovered Doc Binding : {analysis.recovered_doc_binding_tag or 'None'}")
+        print(f"Max RS Corrections    : {analysis.max_ecc_symbols_corrected} / 8 symbols")
+        print("-" * 70)
+        print(f"{'Page':<6} | {'Detected':<10} | {'Status':<22} | {'ECC Corrs':<10} | {'Watermark ID':<34}")
+        print("-" * 70)
+        for p in analysis.page_results:
+            w_id = str(p.watermark_id) if p.watermark_id else "-"
+            stat_val = p.status.value
+            ecc_val = str(p.ecc_symbols_corrected)
+            print(
+                f"{p.page_index + 1:<6} | {str(p.detected):<10} | "
+                f"{stat_val:<22} | {ecc_val:<10} | {w_id:<34}"
+            )
+        print("=" * 70)
+
+        return 0 if analysis.detected and analysis.valid_extraction else 2
+
+    except Exception as e:
+        print(f"Watermark extraction failed: {e}", file=sys.stderr)
+        return 1
+    finally:
+        if storage is not None:
+            storage.close()
+
+
+# -------------------------------------------------------------------------
 # Main Router
 # -------------------------------------------------------------------------
 
@@ -2068,6 +2316,15 @@ def main(args: Optional[List[str]] = None) -> int:
             return cmd_ledger_proof(parsed)
         elif parsed.subcommand == "validators":
             return cmd_ledger_validators(parsed)
+        parser.print_help()
+        return 0
+    elif parsed.command == "forensic":
+        if parsed.subcommand == "investigate":
+            return cmd_forensic_investigate(parsed)
+        elif parsed.subcommand == "verify":
+            return cmd_forensic_verify(parsed)
+        elif parsed.subcommand == "extract":
+            return cmd_forensic_extract(parsed)
         parser.print_help()
         return 0
     else:

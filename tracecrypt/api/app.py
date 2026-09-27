@@ -16,7 +16,7 @@ from pathlib import Path
 import platform
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -39,6 +39,9 @@ from tracecrypt.errors import (
 )
 from tracecrypt.event.signed_event import SignedDecryptionEvent
 from tracecrypt.event.verifier import DecryptionEventVerifier
+from tracecrypt.forensics.engine import ForensicInvestigationEngine
+from tracecrypt.forensics.proof_bundle import ForensicProofBundle
+from tracecrypt.forensics.standalone_verifier import StandaloneProofVerifier
 from tracecrypt.identity.certificate import CertificateValidator, PQCIdentityCertificate
 from tracecrypt.identity.keystore import EncryptedKeyContainer, KeystoreManager
 from tracecrypt.identity.lifecycle import OfflineRevocationStore
@@ -1220,5 +1223,97 @@ def create_app() -> FastAPI:
             }
         finally:
             storage.close()
+
+    @app.post("/api/v1/forensics/investigate")
+    async def forensic_investigate(
+        file: UploadFile = File(...),
+        case_id: Optional[str] = Form(None),
+        case_name: Optional[str] = Form("Forensic Attribution Inquiry"),
+        doc_hash: Optional[str] = Form(None),
+    ) -> Dict[str, Any]:
+        """Investigate a leaked document artifact for blind watermark attribution."""
+        import tempfile
+        # Enforce max upload file size (50MB default limit)
+        max_bytes = 50 * 1024 * 1024
+        content = await file.read()
+        if len(content) > max_bytes:
+            raise HTTPException(status_code=413, detail="Artifact file size exceeds 50MB limit")
+
+        suffix = Path(file.filename or "evidence.bin").suffix or ".bin"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(content)
+            tmp_path = Path(tmp.name)
+
+        storage = _get_api_ledger_storage()
+        engine = ForensicInvestigationEngine(ledger_storage=storage)
+        try:
+            inv = engine.investigate(
+                file_path=tmp_path,
+                case_id=case_id,
+                case_name=case_name or "Forensic Attribution Inquiry",
+                suspect_document_hash=doc_hash,
+            )
+
+            proof_bundle = ForensicProofBundle.from_investigation(inv)
+            bundle_dict = proof_bundle.to_dict()
+
+            return {
+                "case_id": inv.case_id,
+                "evidence_hash": inv.evidence.sha3_256,
+                "verdict": inv.verdict.value,
+                "verdict_rationale": inv.verdict_rationale,
+                "watermark_status": {
+                    "detected": inv.watermark_analysis.detected,
+                    "valid_extraction": inv.watermark_analysis.valid_extraction,
+                    "ambiguous": inv.watermark_analysis.ambiguous,
+                    "watermark_id": inv.watermark_analysis.recovered_watermark_id,
+                    "session_id": inv.watermark_analysis.recovered_session_id,
+                    "pages_detected": inv.watermark_analysis.pages_detected,
+                },
+                "ledger_status": {
+                    "transaction_found": inv.ledger_verification.transaction_found,
+                    "block_height": inv.ledger_verification.block_height,
+                    "merkle_proof_valid": inv.ledger_verification.merkle_proof_valid,
+                    "commit_cert_valid": inv.ledger_verification.commit_cert_valid,
+                },
+                "signature_status": {
+                    "mldsa_signature_valid": inv.identity_verification.mldsa_signature_valid,
+                    "recipient_cert_valid": inv.identity_verification.cert_valid,
+                    "cert_revoked": inv.identity_verification.cert_revoked,
+                },
+                "document_binding_status": {
+                    "binding_matches": inv.document_binding.binding_matches,
+                    "expected_doc_hash": inv.document_binding.expected_doc_hash,
+                },
+                "recipient_identity_reference": {
+                    "cert_id": inv.identity_verification.recipient_cert_id,
+                    "common_name": inv.identity_verification.subject_common_name,
+                },
+                "proof_bundle_reference": {
+                    "bundle_digest": proof_bundle.compute_bundle_digest(),
+                    "proof_bundle": bundle_dict,
+                },
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Forensic investigation failed: {e}")
+        finally:
+            if storage is not None:
+                storage.close()
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
+
+    @app.post("/api/v1/forensics/verify-proof")
+    async def forensic_verify_proof(proof_bundle_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Independently verify a standalone .tcproof proof bundle."""
+        try:
+            bundle = ForensicProofBundle.from_dict(proof_bundle_data)
+            verifier = StandaloneProofVerifier()
+            result = verifier.verify(bundle)
+            return result.model_dump()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Proof verification failed: {e}")
 
     return app

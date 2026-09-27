@@ -402,6 +402,37 @@ class LedgerStorage:
             return None
         return SignedDecryptionEvent.model_validate_json(row["event_json"])
 
+    def get_transaction_with_block_by_watermark(
+        self, watermark_id: WatermarkID | str
+    ) -> Optional[Tuple[LedgerTransaction, Block, int]]:
+        """Forensic lookup: retrieve (transaction, block, index_in_block) by WatermarkID."""
+        cursor = self._conn.cursor()
+        cursor.execute(
+            "SELECT transaction_id FROM event_indexes WHERE watermark_id = ?;",
+            (str(watermark_id),),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return self.get_transaction_with_block(row["transaction_id"])
+
+    def get_all_document_hashes(self) -> List[str]:
+        """Retrieve all unique document hashes from committed events."""
+        cursor = self._conn.cursor()
+        cursor.execute("SELECT event_json FROM event_indexes;")
+        rows = cursor.fetchall()
+        hashes = set()
+        for r in rows:
+            try:
+                import json
+                ev = json.loads(r["event_json"])
+                dh = ev.get("event", {}).get("document_hash")
+                if dh:
+                    hashes.add(dh)
+            except Exception:
+                pass
+        return sorted(list(hashes))
+
     def lookup_by_session(self, session_id: SessionID | str) -> Optional[SignedDecryptionEvent]:
         """Forensic lookup: retrieve signed event by SessionID."""
         cursor = self._conn.cursor()
