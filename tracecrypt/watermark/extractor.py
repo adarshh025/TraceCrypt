@@ -132,12 +132,19 @@ class WatermarkExtractor:
         if deskew_enabled:
             # Check detected angle first
             est_angle = WatermarkNormalizer.estimate_skew_angle(WatermarkNormalizer.to_grayscale(page_image))
-            candidate_angles = []
-            if abs(est_angle) >= 0.5:
-                candidate_angles.append(est_angle)
-            # Add small standard forensic rotation angles
+            candidate_angles: List[float] = []
+            if abs(est_angle) >= 0.25:
+                for sign in [1.0, -1.0]:
+                    signed_angle = sign * abs(est_angle)
+                    if not any(abs(signed_angle - ca) < 0.05 for ca in candidate_angles):
+                        candidate_angles.append(signed_angle)
+                    round_angle = sign * round(abs(est_angle))
+                    if 0.5 <= abs(round_angle) <= 5.0 and not any(abs(round_angle - ca) < 0.05 for ca in candidate_angles):
+                        candidate_angles.append(round_angle)
+
+            # Ensure small standard forensic rotation angles are evaluated
             for a in [-3.0, -2.0, -1.0, 1.0, 2.0, 3.0]:
-                if not any(abs(a - ca) < 0.25 for ca in candidate_angles):
+                if not any(abs(a - ca) < 0.05 for ca in candidate_angles):
                     candidate_angles.append(a)
 
             best_status = status

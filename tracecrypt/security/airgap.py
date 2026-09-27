@@ -121,6 +121,13 @@ class AirGapGuard:
         """Return True if air-gap socket guard is currently active."""
         return cls._installed
 
+    def __enter__(self) -> AirGapGuard:
+        self.install()
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self.uninstall()
+
 
 def check_network_access(target_host: str, port: int = 443) -> bool:
     """Helper to verify if a given destination violates the air-gap policy."""

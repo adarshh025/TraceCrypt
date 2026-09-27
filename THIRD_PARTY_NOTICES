@@ -1,0 +1,60 @@
+# Third-Party Notices & Dependency Disclaimers
+
+TraceCrypt incorporates or relies upon the following open-source third-party software libraries. Each package remains licensed under its original terms:
+
+---
+
+### 1. cryptography
+- **License**: Apache License 2.0 / BSD 3-Clause License
+- **Copyright**: (c) Individual contributors to the PyCA cryptography project
+- **Usage**: AES-256-GCM authenticated encryption, SHA3-256, and OS CSPRNG bindings.
+
+### 2. pydantic / pydantic-core
+- **License**: MIT License
+- **Copyright**: (c) 2017-present Samuel Colvin and contributors
+- **Usage**: Type validation, data models, and schema serialization.
+
+### 3. dilithium-py
+- **License**: MIT License
+- **Copyright**: (c) 2023-present Giacomo Pope and contributors
+- **Usage**: NIST FIPS 204 ML-DSA-65 post-quantum digital signature reference implementation.
+
+### 4. mlkem
+- **License**: MIT License
+- **Copyright**: (c) 2024-present Giacomo Pope and contributors
+- **Usage**: NIST FIPS 203 ML-KEM-768 post-quantum key encapsulation mechanism implementation.
+
+### 5. numpy
+- **License**: BSD 3-Clause License
+- **Copyright**: (c) 2005-2024, NumPy Developers
+- **Usage**: Matrix arithmetic and numerical transformations for DWT-DCT watermark processing.
+
+### 6. scipy
+- **License**: BSD 3-Clause License
+- **Copyright**: (c) 2001-2024, SciPy Developers
+- **Usage**: Discrete Cosine Transform (DCT-II) signal processing.
+
+### 7. opencv-python
+- **License**: Apache License 2.0
+- **Copyright**: (c) OpenCV team and contributors
+- **Usage**: Computer vision image normalization, affine deskew transformation, and interpolation.
+
+### 8. Pillow (PIL)
+- **License**: Historical Permission Notice and Disclaimer (HPND)
+- **Copyright**: (c) 2010-present Alex Clark and contributors; (c) 1995-2011 Fredrik Lundh and Secret Labs AB
+- **Usage**: Image format parsing and raster rendering.
+
+### 9. reportlab
+- **License**: BSD 3-Clause License
+- **Copyright**: (c) 2000-2024 ReportLab Europe Ltd.
+- **Usage**: Programmatic PDF document layout and forensic report generation.
+
+### 10. pypdf
+- **License**: BSD 3-Clause License
+- **Copyright**: (c) 2006-2008 Mathieu Fenniak and contributors
+- **Usage**: PDF object parsing, page extraction, and byte extraction.
+
+### 11. pytest
+- **License**: MIT License
+- **Copyright**: (c) 2004-present Holger Krekel and others
+- **Usage**: Automated testing, adversarial regression, and benchmark validation framework.

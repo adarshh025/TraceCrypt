@@ -1,0 +1,271 @@
+{
+  "metadata": {
+    "timestamp": 1790523974315159,
+    "hostname": "lenovoAdarsh",
+    "os": "Windows 10",
+    "python_version": "3.11.9",
+    "architecture": "AMD64",
+    "protocol_version": "1.0.0",
+    "total_benchmark_duration_sec": 52.36
+  },
+  "decryption_pipeline": {
+    "total_ms": {
+      "mean_ms": 2402.59,
+      "median_ms": 2381.02,
+      "p95_ms": 2489.28,
+      "min_ms": 2349.38,
+      "max_ms": 2514.12
+    },
+    "meets_nfr_004": false
+  },
+  "forensic_extraction": {
+    "pages_count": 2,
+    "render_ms_total": 16.7,
+    "render_ms_per_page": 8.35,
+    "embed_ms_total": 2268.92,
+    "embed_ms_per_page": 1134.46,
+    "extract_ms_total": 699.84,
+    "extract_ms_per_page": 349.92,
+    "fidelity": {
+      "psnr": 44.46476946210288,
+      "ssim": 0.9762468319525055,
+      "mse": 2.325966282894737
+    },
+    "extraction_status": "DECODED",
+    "meets_target_3_5s": true
+  },
+  "ledger_consensus": {
+    "transactions_generated": 50,
+    "transactions_committed": 50,
+    "merkle_tree_compute_ms": 2.0453,
+    "consensus_finality_ms": 4201.23,
+    "measured_python_tps": 11.9,
+    "meets_nfr_006_finality_target": false,
+    "meets_nfr_006_tps_target": false
+  },
+  "fidelity_and_robustness": {
+    "fidelity_sweep": {
+      "4.0": {
+        "psnr_db": 50.253236247238874,
+        "ssim": 0.9932788176936967,
+        "extraction_status": "DECODED",
+        "meets_psnr_target": true,
+        "meets_ssim_target": false
+      },
+      "6.0": {
+        "psnr_db": 46.91786549879768,
+        "ssim": 0.9861086372748589,
+        "extraction_status": "DECODED",
+        "meets_psnr_target": true,
+        "meets_ssim_target": false
+      },
+      "8.0": {
+        "psnr_db": 44.4664468033292,
+        "ssim": 0.976256560368894,
+        "extraction_status": "DECODED",
+        "meets_psnr_target": true,
+        "meets_ssim_target": false
+      },
+      "10.0": {
+        "psnr_db": 42.559711265148934,
+        "ssim": 0.9639952431789806,
+        "extraction_status": "DECODED",
+        "meets_psnr_target": true,
+        "meets_ssim_target": false
+      },
+      "12.0": {
+        "psnr_db": 40.99084714231484,
+        "ssim": 0.9496839999761048,
+        "extraction_status": "DECODED",
+        "meets_psnr_target": false,
+        "meets_ssim_target": false
+      }
+    },
+    "attack_matrix": [
+      {
+        "attack": "Baseline (Watermarked PDF)",
+        "status": "DECODED",
+        "raw_ber": 0.0,
+        "correlation": 5.0682,
+        "corrected_symbols": 0,
+        "payload_matched": true
+      },
+      {
+        "attack": "JPEG (Q=95)",
+        "status": "DECODED",
+        "raw_ber": 0.0,
+        "correlation": 4.0241,
+        "corrected_symbols": 0,
+        "payload_matched": true
+      },
+      {
+        "attack": "JPEG (Q=85)",
+        "status": "CORRUPTED",
+        "raw_ber": 0.0879,
+        "correlation": 1.014,
+        "corrected_symbols": 0,
+        "payload_matched": false
+      },
+      {
+        "attack": "JPEG (Q=75)",
+        "status": "NOT_DETECTED",
+        "raw_ber": 0.2285,
+        "correlation": 0.6968,
+        "corrected_symbols": 0,
+        "payload_matched": false
+      },
+      {
+        "attack": "JPEG (Q=65)",
+        "status": "NOT_DETECTED",
+        "raw_ber": 0.3164,
+        "correlation": 0.6131,
+        "corrected_symbols": 0,
+        "payload_matched": false
+      },
+      {
+        "attack": "Downsampling (2x reduction)",
+        "status": "NOT_DETECTED",
+        "raw_ber": 0.5137,
+        "correlation": 0.4454,
+        "corrected_symbols": 0,
+        "payload_matched": false
+      },
+      {
+        "attack": "Rotation (-3\u00b0)",
+        "status": "DECODED",
+        "raw_ber": 0.0,
+        "correlation": 2.8829,
+        "corrected_symbols": 0,
+        "payload_matched": true
+      },
+      {
+        "attack": "Rotation (-2\u00b0)",
+        "status": "DECODED",
+        "raw_ber": 0.0,
+        "correlation": 2.8945,
+        "corrected_symbols": 0,
+        "payload_matched": true
+      },
+      {
+        "attack": "Rotation (-1\u00b0)",
+        "status": "DECODED",
+        "raw_ber": 0.0,
+        "correlation": 2.9046,
+        "corrected_symbols": 0,
+        "payload_matched": true
+      },
+      {
+        "attack": "Rotation (+1\u00b0)",
+        "status": "DECODED",
+        "raw_ber": 0.0,
+        "correlation": 2.8999,
+        "corrected_symbols": 0,
+        "payload_matched": true
+      },
+      {
+        "attack": "Rotation (+2\u00b0)",
+        "status": "DECODED",
+        "raw_ber": 0.0,
+        "correlation": 2.904,
+        "corrected_symbols": 0,
+        "payload_matched": true
+      },
+      {
+        "attack": "Rotation (+3\u00b0)",
+        "status": "DECODED",
+        "raw_ber": 0.002,
+        "correlation": 2.3097,
+        "corrected_symbols": 1,
+        "payload_matched": true
+      },
+      {
+        "attack": "Cropping (5%)",
+        "status": "DECODED",
+        "raw_ber": 0.0,
+        "correlation": 4.1347,
+        "corrected_symbols": 0,
+        "payload_matched": true
+      },
+      {
+        "attack": "Cropping (10%)",
+        "status": "DECODED",
+        "raw_ber": 0.0,
+        "correlation": 3.2663,
+        "corrected_symbols": 0,
+        "payload_matched": true
+      },
+      {
+        "attack": "Cropping (15%)",
+        "status": "DECODED",
+        "raw_ber": 0.0,
+        "correlation": 2.5123,
+        "corrected_symbols": 0,
+        "payload_matched": true
+      },
+      {
+        "attack": "Gaussian Noise (std=3.0)",
+        "status": "DECODED",
+        "raw_ber": 0.0,
+        "correlation": 3.9979,
+        "corrected_symbols": 0,
+        "payload_matched": true
+      },
+      {
+        "attack": "Gaussian Noise (std=5.0)",
+        "status": "DECODED",
+        "raw_ber": 0.0,
+        "correlation": 3.5557,
+        "corrected_symbols": 0,
+        "payload_matched": true
+      },
+      {
+        "attack": "Gaussian Blur (3x3)",
+        "status": "DECODED",
+        "raw_ber": 0.0,
+        "correlation": 3.1221,
+        "corrected_symbols": 0,
+        "payload_matched": true
+      },
+      {
+        "attack": "Brightness (-20)",
+        "status": "DECODED",
+        "raw_ber": 0.0,
+        "correlation": 5.0303,
+        "corrected_symbols": 0,
+        "payload_matched": true
+      },
+      {
+        "attack": "Contrast (0.85x)",
+        "status": "DECODED",
+        "raw_ber": 0.0,
+        "correlation": 3.7834,
+        "corrected_symbols": 0,
+        "payload_matched": true
+      },
+      {
+        "attack": "Combined: Rotation (+2\u00b0) + JPEG (Q=85)",
+        "status": "NOT_DETECTED",
+        "raw_ber": 0.1953,
+        "correlation": 0.6843,
+        "corrected_symbols": 0,
+        "payload_matched": false
+      },
+      {
+        "attack": "Combined: Crop (10%) + JPEG (Q=85)",
+        "status": "NOT_DETECTED",
+        "raw_ber": 0.0742,
+        "correlation": 0.7947,
+        "corrected_symbols": 0,
+        "payload_matched": false
+      },
+      {
+        "attack": "Combined: Blur + JPEG (Q=85)",
+        "status": "NOT_DETECTED",
+        "raw_ber": 0.1348,
+        "correlation": 0.8208,
+        "corrected_symbols": 0,
+        "payload_matched": false
+      }
+    ]
+  }
+}
