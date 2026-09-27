@@ -158,8 +158,13 @@ class Block(BaseModel):
                     f"Commit certificate height {self.commit_certificate.height} "
                     f"does not match block height {self.header.height}."
                 )
-            if self.commit_certificate.block_hash != self.header.block_hash:
+            if self.commit_certificate.chain_id != self.header.chain_id:
                 raise BlockValidationError(
-                    f"Commit certificate block_hash {self.commit_certificate.block_hash} "
-                    f"does not match block header {self.header.block_hash}."
+                    f"Commit certificate chain_id '{self.commit_certificate.chain_id}' "
+                    f"does not match block header '{self.header.chain_id}'."
+                )
+            if self.commit_certificate.validator_set_hash != self.header.validator_set_hash:
+                raise BlockValidationError(
+                    f"Commit certificate validator_set_hash '{self.commit_certificate.validator_set_hash}' "
+                    f"does not match block header '{self.header.validator_set_hash}'."
                 )

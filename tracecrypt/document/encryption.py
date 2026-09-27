@@ -12,6 +12,9 @@ from __future__ import annotations
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+import threading
+from typing import ClassVar, Optional, Set
+
 from tracecrypt.crypto.random import SecureRandom
 from tracecrypt.errors import CryptographicError, ValidationError
 
@@ -22,6 +25,15 @@ class ContentEncryption:
     CEK_KEY_SIZE_BYTES = 32  # 256 bits
     NONCE_SIZE_BYTES = 12    # 96 bits
     TAG_SIZE_BYTES = 16      # 128 bits
+
+    _used_nonces: ClassVar[Set[bytes]] = set()
+    _nonce_lock: ClassVar[threading.Lock] = threading.Lock()
+
+    @classmethod
+    def reset_nonce_tracker(cls) -> None:
+        """Reset the used nonces registry (for testing isolation)."""
+        with cls._nonce_lock:
+            cls._used_nonces.clear()
 
     @classmethod
     def generate_cek(cls) -> bytearray:
@@ -35,6 +47,7 @@ class ContentEncryption:
         document_bytes: bytes,
         cek: bytes | bytearray,
         aad_bytes: bytes,
+        override_nonce: Optional[bytes] = None,
     ) -> tuple[bytes, bytes, bytes]:
         """Encrypt document payload once using AES-256-GCM.
 
@@ -42,6 +55,7 @@ class ContentEncryption:
             document_bytes: Plaintext document bytes.
             cek: 32-byte AES key.
             aad_bytes: RFC 8785 canonical bytes for Authenticated Associated Data.
+            override_nonce: Optional explicit nonce (for testing). Validated for uniqueness.
 
         Returns:
             tuple of (nonce_12b, auth_tag_16b, ciphertext_bytes)
@@ -51,7 +65,20 @@ class ContentEncryption:
                 f"Invalid CEK length: expected {cls.CEK_KEY_SIZE_BYTES} bytes, got {len(cek)}"
             )
 
-        nonce = SecureRandom.random_bytes(cls.NONCE_SIZE_BYTES)
+        if override_nonce is not None:
+            if len(override_nonce) != cls.NONCE_SIZE_BYTES:
+                raise ValidationError(
+                    f"Invalid AES-GCM nonce length: expected {cls.NONCE_SIZE_BYTES} bytes, got {len(override_nonce)}"
+                )
+            nonce = bytes(override_nonce)
+        else:
+            nonce = SecureRandom.random_bytes(cls.NONCE_SIZE_BYTES)
+
+        with cls._nonce_lock:
+            if nonce in cls._used_nonces:
+                raise CryptographicError("CRITICAL SECURITY VIOLATION: AES-GCM nonce reuse detected!")
+            cls._used_nonces.add(nonce)
+
         try:
             aesgcm = AESGCM(bytes(cek))
             # AESGCM.encrypt returns ciphertext + 16-byte tag appended
@@ -59,6 +86,8 @@ class ContentEncryption:
             ciphertext = encrypted_payload[:-cls.TAG_SIZE_BYTES]
             auth_tag = encrypted_payload[-cls.TAG_SIZE_BYTES:]
             return nonce, auth_tag, ciphertext
+        except CryptographicError:
+            raise
         except Exception as e:
             raise CryptographicError(f"AES-256-GCM document encryption failed: {e}") from e
 

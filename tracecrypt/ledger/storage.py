@@ -14,12 +14,13 @@ Provides:
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from tracecrypt.errors import ChainVerificationError, MerkleProofError
+from tracecrypt.errors import ChainVerificationError, MerkleProofError, SecurityError
 from tracecrypt.event.signed_event import SignedDecryptionEvent
 from tracecrypt.ledger.block import Block, BlockHeader, LedgerTransaction
 from tracecrypt.ledger.genesis import GenesisConfig
@@ -47,8 +48,35 @@ class LedgerStorage:
             check_same_thread=False,
         )
         self._conn.row_factory = sqlite3.Row
+        self.checkpoint_path = (
+            Path(str(self.db_path) + ".checkpoint") if str(self.db_path) != ":memory:" else None
+        )
         self._configure_pragmas()
         self._run_migrations()
+        self._check_rollback()
+
+    def _check_rollback(self) -> None:
+        """Verify storage height against monotonic local checkpoint to prevent database rollback."""
+        if self.checkpoint_path and self.checkpoint_path.is_file():
+            try:
+                data = json.loads(self.checkpoint_path.read_text(encoding="utf-8"))
+                chk_height = int(data.get("max_height", 0))
+                current_height = self.get_latest_height()
+                if current_height < chk_height:
+                    raise SecurityError(
+                        f"Database rollback detected: storage height {current_height} "
+                        f"is lower than monotonic checkpoint {chk_height}."
+                    )
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    def _update_checkpoint(self, height: int, tip_hash: str) -> None:
+        """Atomically advance the monotonic checkpoint file."""
+        if self.checkpoint_path:
+            chk_data = {"max_height": height, "tip_hash": tip_hash, "updated_at": utc_now_micros()}
+            tmp_chk = self.checkpoint_path.with_suffix(".tmp")
+            tmp_chk.write_text(json.dumps(chk_data), encoding="utf-8")
+            tmp_chk.replace(self.checkpoint_path)
 
     def _configure_pragmas(self) -> None:
         """Enforce WAL mode, foreign keys, and synchronous writes for crash resilience."""
@@ -160,6 +188,15 @@ class LedgerStorage:
 
     def save_genesis(self, genesis: GenesisConfig) -> None:
         """Persist canonical genesis configuration."""
+        existing = self.get_genesis()
+        if existing is not None:
+            if existing.compute_genesis_hash() != genesis.compute_genesis_hash():
+                raise ChainVerificationError(
+                    f"Genesis conflict: storage is already initialized with genesis hash "
+                    f"'{existing.compute_genesis_hash()}', cannot overwrite with '{genesis.compute_genesis_hash()}'"
+                )
+            return
+
         cursor = self._conn.cursor()
         cursor.execute(
             """
@@ -259,6 +296,7 @@ class LedgerStorage:
                 )
 
             self._conn.commit()
+            self._update_checkpoint(header.height, header.block_hash)
         except Exception:
             self._conn.rollback()
             raise
@@ -269,7 +307,7 @@ class LedgerStorage:
         cursor.execute(
             """
             SELECT previous_block_hash, block_hash, state_root, transaction_root,
-                   header_json, commit_certificate_json
+                   validator_set_hash, header_json, commit_certificate_json
             FROM blocks WHERE height = ?;
             """,
             (height,),
@@ -281,15 +319,22 @@ class LedgerStorage:
         header = BlockHeader.model_validate_json(row["header_json"])
 
         # Detect column tampering vs JSON commitment
-        if (
-            row["previous_block_hash"] != header.previous_block_hash
-            or row["block_hash"] != header.block_hash
-            or row["state_root"] != header.state_root
-            or row["transaction_root"] != header.transaction_root
-        ):
+        if row["previous_block_hash"] != header.previous_block_hash:
             msg = (
                 f"Chain verification failed: previous_block_hash mismatch at height {height} "
                 f"between SQL column and header."
+            )
+            raise ChainVerificationError(msg)
+
+        if (
+            row["block_hash"] != header.block_hash
+            or row["state_root"] != header.state_root
+            or row["transaction_root"] != header.transaction_root
+            or row["validator_set_hash"] != header.validator_set_hash
+        ):
+            msg = (
+                f"Chain verification failed: metadata mismatch at height {height} "
+                f"between SQL column and header commitment."
             )
             raise ChainVerificationError(msg)
 
@@ -570,10 +615,22 @@ class LedgerStorage:
 
             header = block.header
 
-            # 1. Height check
+            # 1. Height and Chain ID check
             if header.height != h:
                 raise ChainVerificationError(
                     f"Chain verification failed at height {h}: Block reports height {header.height}."
+                )
+            if header.chain_id != genesis.chain_id:
+                raise ChainVerificationError(
+                    f"Chain verification failed at height {h}: Block chain_id '{header.chain_id}' "
+                    f"does not match genesis chain_id '{genesis.chain_id}'."
+                )
+
+            expected_valset_hash = validator_set.compute_hash()
+            if header.validator_set_hash != expected_valset_hash:
+                raise ChainVerificationError(
+                    f"Chain verification failed at height {h}: validator_set_hash mismatch. "
+                    f"Header claims '{header.validator_set_hash}', active validator set has '{expected_valset_hash}'"
                 )
 
             # 2. Previous hash link
@@ -621,6 +678,16 @@ class LedgerStorage:
             if cert.height != header.height:
                 raise ChainVerificationError(
                     f"Chain verification failed at height {h}: Certificate height {cert.height} != block {h}."
+                )
+            if cert.chain_id != genesis.chain_id:
+                raise ChainVerificationError(
+                    f"Chain verification failed at height {h}: "
+                    f"Certificate chain_id '{cert.chain_id}' != '{genesis.chain_id}'."
+                )
+            if cert.validator_set_hash != expected_valset_hash:
+                raise ChainVerificationError(
+                    f"Chain verification failed at height {h}: "
+                    f"Certificate validator_set_hash '{cert.validator_set_hash}' != '{expected_valset_hash}'."
                 )
             if cert.block_hash != header.block_hash:
                 err = (

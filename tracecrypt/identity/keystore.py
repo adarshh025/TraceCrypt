@@ -38,12 +38,12 @@ class Argon2idKDFParams(BaseModel):
     """Argon2id key derivation parameters."""
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    algorithm: str = "Argon2id"
-    memory_cost_kb: int = 65536  # 64 MB
-    iterations: int = 3
-    parallelism: int = 4
+    algorithm: str = Field(default="Argon2id", description="KDF algorithm")
+    memory_cost_kb: int = Field(default=65536, ge=65536, description="Memory cost in KB (minimum 64 MB)")
+    iterations: int = Field(default=3, ge=3, description="Time cost iterations (minimum 3)")
+    parallelism: int = Field(default=4, ge=4, description="Parallel lanes (minimum 4)")
     salt_b64: str
-    derived_key_len: int = 32  # 256 bits for AES-256-GCM
+    derived_key_len: int = Field(default=32, ge=32, le=32, description="Derived key length in bytes (256-bit)")
 
 
 class EncryptedKeyContainer(BaseModel):
@@ -213,6 +213,15 @@ class KeystoreManager:
             raise SecurityError(
                 f"Unsupported keystore format version '{container.format_version}' (Expected '{cls.SUPPORTED_VERSION}')"
             )
+
+        if (
+            container.kdf_params.algorithm != "Argon2id"
+            or container.kdf_params.memory_cost_kb < 65536
+            or container.kdf_params.iterations < 3
+            or container.kdf_params.parallelism < 4
+            or container.kdf_params.derived_key_len != 32
+        ):
+            raise SecurityError("Insecure or downgraded Argon2id parameters detected in key container.")
 
         salt = base64.b64decode(container.kdf_params.salt_b64)
         nonce = base64.b64decode(container.nonce_b64)

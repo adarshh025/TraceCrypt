@@ -93,6 +93,20 @@ class DecryptionEvent(BaseModel):
             raise ValidationError(f"Invalid SHA3-256 hex length ({len(hex_part)} != 64)")
         return v
 
+    @field_validator("anti_replay_nonce")
+    @classmethod
+    def validate_nonce_entropy(cls, v: str) -> str:
+        if not isinstance(v, str) or len(v.strip()) < 32:
+            raise ValidationError(
+                f"Anti-replay nonce must be a hex string of at least 32 characters "
+                f"(128-bit entropy), got {len(v)} chars"
+            )
+        try:
+            int(v, 16)
+        except ValueError:
+            raise ValidationError("Anti-replay nonce must contain valid hexadecimal characters.")
+        return v
+
     def to_canonical_dict(self) -> dict[str, object]:
         """Convert event to dictionary excluding signature fields for signing input."""
         d = self.model_dump(mode="json")

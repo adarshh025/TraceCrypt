@@ -26,12 +26,18 @@ class WatermarkNormalizer:
     """Forensic normalization pipeline preparing leaked artifacts for blind extraction."""
 
     @classmethod
-    def rasterize_pdf(cls, pdf_input: bytes | Path | str, scale: float = 2.0) -> List[np.ndarray]:
+    def rasterize_pdf(
+        cls,
+        pdf_input: bytes | Path | str,
+        scale: float = 2.0,
+        max_pages: int = 200,
+    ) -> List[np.ndarray]:
         """Rasterize all pages of a PDF into 2D grayscale NumPy arrays.
 
         Args:
             pdf_input: PDF bytes or file path.
             scale: Rendering scale factor (2.0 gives ~144-150 DPI).
+            max_pages: Maximum permitted pages to rasterize (DoS defense).
 
         Returns:
             List of 2D uint8 NumPy arrays, one per page.
@@ -42,6 +48,9 @@ class WatermarkNormalizer:
             pdf_bytes = pdf_input
 
         doc = pdfium.PdfDocument(pdf_bytes)
+        if len(doc) > max_pages:
+            raise ValueError(f"PDF page count exceeds maximum allowable limit ({len(doc)} > {max_pages})")
+
         pages: List[np.ndarray] = []
 
         for page in doc:

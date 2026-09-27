@@ -127,6 +127,10 @@ class ConsensusEngine:
             logger.debug("Ignored vote for height %d while at height %d", vote.height, self.height)
             return False
 
+        if vote.round < self.round:
+            logger.debug("Ignored stale vote for past round %d while at round %d", vote.round, self.round)
+            return False
+
         val_info = self.validator_set.get_validator(vote.validator_id)
         if val_info is None or val_info.role != NodeRole.VALIDATOR:
             logger.warning("Rejected vote from non-validator: %s", vote.validator_id)

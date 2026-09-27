@@ -32,6 +32,10 @@ class EvidenceIngestion:
         "image/jpeg",
         "image/tiff",
     }
+    MAX_EVIDENCE_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB limit
+    MAX_PAGE_COUNT = 200                         # 200 pages max
+    MAX_IMAGE_DIMENSION = 16384                  # 16384px limit per dimension
+    MAX_IMAGE_PIXELS = 100_000_000               # 100 Megapixels limit
 
     @classmethod
     def _detect_mime_type(cls, data: bytes, filename: Optional[str] = None) -> str:
@@ -82,11 +86,11 @@ class EvidenceIngestion:
             src_path = Path(evidence_input)
             if not src_path.is_file():
                 raise FileNotFoundError(f"Evidence file not found: {src_path}")
-            resolved_filename = filename or src_path.name
+            resolved_filename = Path(filename or src_path.name).name
             evidence_bytes = src_path.read_bytes()
         elif isinstance(evidence_input, (bytes, bytearray)):
             evidence_bytes = bytes(evidence_input)
-            resolved_filename = filename or "evidence.bin"
+            resolved_filename = Path(filename or "evidence.bin").name
         else:
             raise ForensicEvidenceError(
                 f"Invalid evidence input type: {type(evidence_input).__name__}. Expected bytes or Path."
@@ -94,6 +98,12 @@ class EvidenceIngestion:
 
         if not evidence_bytes:
             raise ForensicEvidenceError("Evidence artifact is empty (0 bytes).")
+
+        if len(evidence_bytes) > cls.MAX_EVIDENCE_SIZE_BYTES:
+            raise ForensicEvidenceError(
+                f"Evidence artifact size ({len(evidence_bytes)} bytes) exceeds maximum limit "
+                f"of {cls.MAX_EVIDENCE_SIZE_BYTES} bytes (100 MB)."
+            )
 
         # 2. Compute canonical SHA3-256 evidence digest
         evidence_hash = Hasher.digest_bytes(
@@ -107,7 +117,9 @@ class EvidenceIngestion:
         pages: List[np.ndarray] = []
         if mime_type == "application/pdf":
             try:
-                pages = WatermarkNormalizer.rasterize_pdf(evidence_bytes, scale=render_scale)
+                pages = WatermarkNormalizer.rasterize_pdf(
+                    evidence_bytes, scale=render_scale, max_pages=cls.MAX_PAGE_COUNT
+                )
             except Exception as e:
                 raise ForensicEvidenceError(f"Failed to rasterize evidence PDF: {e}") from e
         else:
@@ -116,11 +128,28 @@ class EvidenceIngestion:
             loaded = cv2.imdecode(np_buf, cv2.IMREAD_UNCHANGED)
             if loaded is None:
                 raise ForensicEvidenceError(f"Failed to decode evidence image ({mime_type}).")
+
+            if loaded.shape[0] > cls.MAX_IMAGE_DIMENSION or loaded.shape[1] > cls.MAX_IMAGE_DIMENSION:
+                raise ForensicEvidenceError(
+                    f"Evidence image dimensions ({loaded.shape[1]}x{loaded.shape[0]}) exceed "
+                    f"maximum allowed {cls.MAX_IMAGE_DIMENSION}px."
+                )
+            if loaded.shape[0] * loaded.shape[1] > cls.MAX_IMAGE_PIXELS:
+                raise ForensicEvidenceError(
+                    f"Evidence image pixel count ({loaded.shape[0] * loaded.shape[1]}) exceeds "
+                    f"maximum limit of {cls.MAX_IMAGE_PIXELS} pixels."
+                )
+
             gray = WatermarkNormalizer.to_grayscale(loaded)
             pages = [gray]
 
         if not pages:
             raise ForensicEvidenceError("Failed to extract any readable pages from evidence artifact.")
+
+        if len(pages) > cls.MAX_PAGE_COUNT:
+            raise ForensicEvidenceError(
+                f"Evidence page count ({len(pages)}) exceeds maximum allowed {cls.MAX_PAGE_COUNT} pages."
+            )
 
         # 5. Create immutable ForensicEvidence record
         evidence_id = f"evd-{SecureRandom.generate_nonce(16)}"

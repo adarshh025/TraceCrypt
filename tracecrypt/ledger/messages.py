@@ -114,6 +114,73 @@ class VoteMessage(BaseModel):
             return False
 
 
+class ProposalMessage(BaseModel):
+    """Cryptographically authenticated proposal message from designated proposer."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    chain_id: str = Field(description="Unique chain ID binding this proposal")
+    height: int = Field(ge=0, description="Block height being proposed")
+    round: int = Field(ge=0, description="Consensus round index")
+    block_hash: str = Field(description="SHA3-256 hash of proposed block: 'sha3-256:<hex>'")
+    proposer_id: ValidatorID = Field(description="Identity of proposing validator")
+    timestamp: int = Field(description="POSIX microsecond UTC timestamp")
+    signature: str = Field(description="Base64-encoded NIST FIPS 204 ML-DSA-65 signature")
+
+    def to_signing_dict(self) -> Dict[str, object]:
+        return {
+            "block_hash": self.block_hash,
+            "chain_id": self.chain_id,
+            "height": self.height,
+            "proposer_id": str(self.proposer_id),
+            "round": self.round,
+            "timestamp": self.timestamp,
+        }
+
+    def to_signing_bytes(self) -> bytes:
+        canonical_bytes = canonicalize(self.to_signing_dict())
+        return DOMAIN_CONSENSUS_PROPOSAL + canonical_bytes
+
+    @classmethod
+    def create_and_sign(
+        cls,
+        chain_id: str,
+        height: int,
+        round: int,
+        block_hash: str,
+        proposer_id: ValidatorID,
+        signing_key: MLDSAPrivateKey,
+        timestamp: int,
+    ) -> ProposalMessage:
+        proto = {
+            "block_hash": block_hash,
+            "chain_id": chain_id,
+            "height": height,
+            "proposer_id": str(proposer_id),
+            "round": round,
+            "timestamp": timestamp,
+        }
+        signing_bytes = DOMAIN_CONSENSUS_PROPOSAL + canonicalize(proto)
+        sig = sign_mldsa(signing_key, signing_bytes)
+        return cls(
+            chain_id=chain_id,
+            height=height,
+            round=round,
+            block_hash=block_hash,
+            proposer_id=proposer_id,
+            timestamp=timestamp,
+            signature=sig.to_b64(),
+        )
+
+    def verify_signature(self, public_key: MLDSAPublicKey) -> bool:
+        try:
+            sig_bytes = base64.b64decode(self.signature)
+            sig = MLDSASignature(sig_bytes)
+            signing_bytes = self.to_signing_bytes()
+            return verify_mldsa(public_key, signing_bytes, sig)
+        except Exception:
+            return False
+
+
 class CommitCertificate(BaseModel):
     """Cryptographic evidence certifying that a block achieved final commitment by quorum."""
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -145,6 +212,11 @@ class CommitCertificate(BaseModel):
         """Independently verify that the certificate contains quorum of valid signatures."""
         if self.block_hash != expected_block_hash:
             return False
+
+        if hasattr(validator_set, "compute_hash"):
+            expected_valset_hash = validator_set.compute_hash()
+            if self.validator_set_hash and self.validator_set_hash != expected_valset_hash:
+                return False
 
         accumulated_power = 0
         seen_validators = set()
