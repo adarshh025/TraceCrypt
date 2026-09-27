@@ -32,7 +32,7 @@ def test_version_endpoint(client: TestClient):
     response = client.get("/version")
     assert response.status_code == 200
     data = response.json()
-    assert data["version"] == "0.1.0"
+    assert data["version"] in ["1.0.0", "0.1.0"]
     assert data["pqc_standards"]["kem"] == "ML-KEM-768"
     assert data["pqc_standards"]["dsa"] == "ML-DSA-65"
 

@@ -423,6 +423,33 @@ def build_parser() -> argparse.ArgumentParser:
     # Command: diagnostics
     subparsers.add_parser("diagnostics", help="Run full system doctor diagnostics (alias for doctor)")
 
+    # Command: demo (SIH 2026 Demonstration & Evaluation Mode)
+    demo_parser = subparsers.add_parser("demo", help="Smart India Hackathon 2026 (SIH 2026) Demo & Evaluation Mode")
+    demo_sub = demo_parser.add_subparsers(dest="subcommand", help="Demo operations")
+
+    demo_sub.add_parser("init", help="Initialize offline Root CA, Alice/Bob/Charlie identities, and 4-node BFT cluster")
+
+    demo_enc = demo_sub.add_parser("encrypt", help="Encrypt sample document for Alice, Bob, and Charlie into .tcdist package")
+    demo_enc.add_argument("--file", "-f", dest="file", default=None, help="Optional source document path")
+
+    demo_dec = demo_sub.add_parser("decrypt", help="Recipient decryption through atomic release gate and BFT consensus commitment")
+    demo_dec.add_argument("recipient", choices=["alice", "bob", "charlie"], help="Recipient alias (alice, bob, or charlie)")
+
+    demo_sub.add_parser("compare", help="Compare Alice and Bob decrypted documents (PSNR, SSIM, visual identicality, distinct watermarks)")
+
+    demo_leak = demo_sub.add_parser("leak", help="Simulate document leak by placing decrypted document into isolated chain of custody")
+    demo_leak.add_argument("recipient", nargs="?", default="alice", choices=["alice", "bob", "charlie"], help="Recipient who leaked the document (default: alice)")
+
+    demo_inv = demo_sub.add_parser("investigate", help="Execute blind forensic investigation on leaked document (no original document needed)")
+    demo_inv.add_argument("--file", "-f", dest="file", default=None, help="Optional leaked document evidence path")
+
+    demo_sub.add_parser("tamper", help="Demonstrate deterministic rejection of maliciously altered forensic evidence")
+    demo_sub.add_parser("replay", help="Demonstrate deterministic rejection of replay attacks on BFT ledger")
+    demo_sub.add_parser("bft", help="Demonstrate 4-node BFT consensus (4/4 unanimity, 1 offline tolerance, state catch-up)")
+    demo_sub.add_parser("robustness", help="Demonstrate measured watermark recovery under JPEG compression and scaling")
+    demo_sub.add_parser("reset", help="Safely reset demo environment to clean state")
+    demo_sub.add_parser("all", help="Execute complete end-to-end golden path demonstration and all security challenges")
+
     return parser
 
 
@@ -455,6 +482,7 @@ def cmd_version() -> int:
 
 
 def cmd_doctor() -> int:
+    print("Running TraceCrypt System Doctor...\n")
     print("TRACECRYPT DOCTOR\n")
     results = []
 
@@ -552,6 +580,8 @@ def cmd_doctor() -> int:
 
     all_ready = all(ok for _, ok in results)
     print("\nSTATUS: " + ("READY" if all_ready else "NOT READY"))
+    if all_ready:
+        print("ALL CHECKS PASSED")
     return 0 if all_ready else 1
 
 
@@ -2531,14 +2561,137 @@ def cmd_validator_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_validator_start(args: argparse.Namespace) -> int:
-    print("Validator node started (air-gapped local consensus)")
-    return 0
+def cmd_demo(parsed: argparse.Namespace) -> int:
+    """Execute SIH 2026 demonstration and evaluation engine operations."""
+    from tracecrypt.demo.engine import SIHDemoEngine
+
+    sub = getattr(parsed, "subcommand", None)
+    if not sub:
+        print("Please specify a demo subcommand. Run 'tracecrypt demo --help' for details.")
+        return 1
+
+    engine = SIHDemoEngine()
+
+    try:
+        if sub == "init":
+            res = engine.init_environment()
+            ca_id = res.get("root_ca", {}).get("ca_id", "N/A")
+            recips = res.get("recipients", {})
+            vals = res.get("validators", {})
+            print(f"\n[DEMO] Environment initialized successfully.")
+            print(f"       Root CA:    {ca_id}")
+            print(f"       Recipients: {len(recips)} initialized (Alice, Bob, Charlie)")
+            print(f"       Validators: {len(vals)} initialized in 4-node BFT cluster")
+            return 0
+
+        elif sub == "encrypt":
+            source_file = Path(parsed.file) if getattr(parsed, "file", None) else None
+            res = engine.encrypt_document(input_pdf=source_file)
+            print(f"\n[DEMO] Document encrypted for Alice, Bob, and Charlie.")
+            print(f"       Package: {res['package_path']}")
+            print(f"       Doc ID:  {res['document_id']}")
+            print(f"       Hash:    {res['document_hash']}")
+            return 0
+
+        elif sub == "decrypt":
+            recip = getattr(parsed, "recipient", "alice")
+            res = engine.decrypt_for_recipient(recip)
+            print(f"\n[DEMO] Decryption completed for {recip.title()}.")
+            print(f"       Recipient ID: {res.get('recipient_id')}")
+            print(f"       Output PDF:   {res.get('output_pdf')}")
+            print(f"       Watermark ID: {res.get('watermark_id')}")
+            print(f"       Block Height: {res.get('committed_block_height')}")
+            return 0
+
+        elif sub == "compare":
+            res = engine.compare_decrypted_copies()
+            v_id = res.get("visual_identicality", {})
+            c_diff = res.get("cryptographic_differentiation", {})
+            print(f"\n[DEMO] Decrypted Document Comparison:")
+            print(f"       Alice vs Original PSNR: {v_id.get('alice_vs_original', {}).get('psnr_db')} dB")
+            print(f"       Bob vs Original PSNR:   {v_id.get('bob_vs_original', {}).get('psnr_db')} dB")
+            print(f"       Alice vs Bob PSNR:      {v_id.get('alice_vs_bob', {}).get('psnr_db')} dB")
+            print(f"       Alice vs Bob SSIM:      {v_id.get('alice_vs_bob', {}).get('ssim')}")
+            print(f"       Distinct Watermarks:    {c_diff.get('watermark_ids_differ')}")
+            print(f"       Status:                 {res.get('status')}")
+            return 0
+
+        elif sub == "leak":
+            recip = getattr(parsed, "recipient", "alice")
+            res = engine.leak_document(recip)
+            print(f"\n[DEMO] Simulated document leak recorded.")
+            print(f"       Leaker:   {res.get('leaked_by_recipient', '').title()}")
+            print(f"       Evidence: {res.get('evidence_path')}")
+            return 0
+
+        elif sub == "investigate":
+            evid_file = Path(parsed.file) if getattr(parsed, "file", None) else None
+            res = engine.investigate_leak(evidence_path=evid_file)
+            print(f"\n[DEMO] Blind Forensic Investigation Completed:")
+            print(f"       Verdict:       {res.get('verdict')}")
+            print(f"       Leaker ID:     {res.get('attributed_recipient_id')}")
+            print(f"       Leaker Name:   {res.get('attributed_recipient_name')}")
+            print(f"       Watermark ID:  {res.get('watermark_id')}")
+            print(f"       Block Height:  {res.get('ledger', {}).get('block_height')}")
+            print(f"       Proof Bundle:  {res.get('standalone_verification', {}).get('proof_bundle_path')}")
+            print(f"       Standalone:    {res.get('standalone_verification', {}).get('recomputed_verdict')}")
+            return 0
+
+        elif sub == "tamper":
+            res = engine.demonstrate_tampering()
+            print(f"\n[DEMO] Security: Malicious Tampering Rejection:")
+            for vec_key, details in res.items():
+                if isinstance(details, dict):
+                    print(f"       - {vec_key}: {details.get('verdict')}")
+                else:
+                    print(f"       - {vec_key}: {details}")
+            return 0
+
+        elif sub == "replay":
+            res = engine.demonstrate_replay()
+            print(f"\n[DEMO] Security: Replay Attack Rejection:")
+            print(f"       - Result: {res.get('submission_result')}")
+            print(f"       - Status: {res.get('status')}")
+            return 0
+
+        elif sub == "bft":
+            res = engine.demonstrate_bft()
+            print(f"\n[DEMO] BFT Consensus Demonstration:")
+            print(f"       - Normal Consensus:       {res['normal_consensus']['status']}")
+            print(f"       - Fault-Tolerant (f=1):   {res['fault_tolerant_consensus']['status']}")
+            print(f"       - State Catch-Up:         {res['state_catch_up']['status']}")
+            return 0
+
+        elif sub == "robustness":
+            res = engine.demonstrate_corruption()
+            print(f"\n[DEMO] Watermark Boundary Evaluation:")
+            print(f"       - Clean Baseline:  corr={res['clean_baseline']['correlation']:.3f}, status={res['clean_baseline']['status']}")
+            print(f"       - JPEG Q=80:       corr={res['jpeg_compression_q80']['correlation']:.3f}, status={res['jpeg_compression_q80']['status']}")
+            print(f"       - 0.85x Scaling:   corr={res['scaling_0_85x']['correlation']:.3f}, status={res['scaling_0_85x']['status']}")
+            return 0
+
+        elif sub == "reset":
+            engine.reset_demo()
+            print(f"\n[DEMO] Demo environment safely reset.")
+            return 0
+
+        elif sub == "all":
+            results = engine.run_all()
+            print(f"\n[DEMO] All 11 SIH 2026 demonstration stages executed successfully.")
+            return 0
+
+        else:
+            print(f"Unknown demo subcommand: {sub}")
+            return 1
+    except Exception as e:
+        print(f"\n[DEMO ERROR] Execution failed: {e}")
+        return 1
 
 
 # -------------------------------------------------------------------------
 # Main Router
 # -------------------------------------------------------------------------
+
 
 
 def main(args: Optional[List[str]] = None) -> int:
@@ -2728,6 +2881,8 @@ def main(args: Optional[List[str]] = None) -> int:
         return 0
     elif parsed.command == "diagnostics":
         return cmd_doctor()
+    elif parsed.command == "demo":
+        return cmd_demo(parsed)
     else:
         parser.print_help()
         return 0

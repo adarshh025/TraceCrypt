@@ -1,0 +1,28 @@
+{
+  "verdict": "VERIFIED",
+  "case_id": "cas-0f8cea2144d40dc24fd6dba359c11547",
+  "investigator_id": "usr-00000000000000000000000000001001",
+  "attributed_recipient_id": "rcp-000000000000000000000000000a11ce",
+  "attributed_recipient_name": "Alice Intelligence Officer",
+  "document_hash": "sha3-256:671343616c6887b6fc88d9c531e772f046c104c6494774f464997cd5b9afd34d",
+  "watermark_id": "wm-25b39bdf092f1475a946b5ee836deb4c",
+  "session_tag": "111dffde2891f99d",
+  "transaction_id": "tx-d24c32ce9f67ec00b27754af44a0e825",
+  "ledger": {
+    "block_height": 1,
+    "block_hash": "sha3-256:ae6e9f2a3688da70a481063f69cd48e17adfa9adeec3321895b7e59afab7498b",
+    "merkle_proof_valid": true,
+    "commit_certificate_valid": true,
+    "quorum_satisfied": true
+  },
+  "cryptography": {
+    "mldsa_signature_valid": true,
+    "certificate_chain_valid": true,
+    "document_binding_valid": true
+  },
+  "standalone_verification": {
+    "proof_bundle_path": "C:\\TraceCrypt\\data\\demo\\evidence\\LEAK_ATTRIBUTION_PROOF.tcproof",
+    "standalone_verified": true,
+    "recomputed_verdict": "VERIFIED"
+  }
+}

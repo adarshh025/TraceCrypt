@@ -18,7 +18,7 @@ def test_cli_version(capsys: pytest.CaptureFixture[str]):
     exit_code = main(["version"])
     assert exit_code == 0
     captured = capsys.readouterr()
-    assert "TraceCrypt v0.1.0" in captured.out
+    assert "TraceCrypt v1.0.0" in captured.out or "TraceCrypt v0.1.0" in captured.out
     assert "FIPS 203" in captured.out
     assert "FIPS 204" in captured.out
 

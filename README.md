@@ -1,10 +1,44 @@
 # TraceCrypt: Offline Post-Quantum Forensic Document Attribution Platform
 
-**Version:** 1.0.0  
-**Build Target:** Air-Gapped Environments (Windows x64 / Linux)  
-**Security Standard:** 100% Offline, Zero Network Egress, Post-Quantum Cryptography  
+[![Smart India Hackathon 2026](https://img.shields.io/badge/SIH-2026-blue.svg)](https://sih.gov.in)
+[![Problem Statement](https://img.shields.io/badge/Problem%20Statement-SIH26237-darkgreen.svg)](docs/sih/traceability.md)
+[![Team](https://img.shields.io/badge/Team-Laccha%20Paratha%20(138638)-orange.svg)](docs/TEAM_CONTRIBUTIONS.md)
+[![Security Standard](https://img.shields.io/badge/Security-Air--Gapped%20%7C%20Post--Quantum-red.svg)](docs/sih/security.md)
 
-TraceCrypt is a production-grade, fully offline, air-gapped forensic document attribution platform. It enforces cryptographic non-repudiation on document access by embedding unique, invisible transform-domain watermarks at the moment of decryption, committing digitally signed canonical attribution events into an offline permissioned BFT ledger, and providing deterministic forensic adjudication when leaks occur.
+---
+
+### Smart India Hackathon 2026 (SIH 2026) Submission Dossier
+* **Problem Statement:** Cryptographic Attribution and Immutable Decryption Provenance for Multi-Recipient Encrypted Document Distribution
+* **Problem Statement ID:** `SIH26237`
+* **Team Name:** Team Laccha Paratha
+* **Team ID:** `138638`
+* **Team Leader:** Adarsh Aher
+* **Team Members:** Adarsh Aher, Kashish, Twinkle Belhekar, Pratibha Kumari, Utkarsh Magar, Akash Rajput
+* **Submission Dossier:** [docs/sih/README.md](docs/sih/README.md) | [Live Demo Script](docs/SIH_DEMO_SCRIPT.md) | [Traceability Matrix](docs/SIH26237_TRACEABILITY.md) | [Architecture Diagrams](docs/diagrams/01_complete_architecture.md)
+
+---
+
+## ⚡ 60-Second Judge Quickstart
+
+TraceCrypt includes a 100% offline, automated demonstration engine designed specifically for SIH 2026 judges:
+
+```bash
+# 1. Run Complete 11-Stage End-to-End Demonstration & Adversarial Suite
+python -m tracecrypt.cli.main demo all
+
+# Or run individual demonstration steps:
+python -m tracecrypt.cli.main demo init            # Initialize Root CA, 3 Recipients & 4-Node BFT Cluster
+python -m tracecrypt.cli.main demo encrypt         # Multi-recipient PQC encryption (.tcdist)
+python -m tracecrypt.cli.main demo decrypt alice   # Alice decryption + DWT-DCT watermarking + BFT commit
+python -m tracecrypt.cli.main demo decrypt bob     # Bob decryption + unique DWT-DCT watermarking + BFT commit
+python -m tracecrypt.cli.main demo compare         # Compare Alice vs Bob (PSNR > 40 dB, SSIM > 0.90)
+python -m tracecrypt.cli.main demo leak alice      # Simulate leak to isolated evidence directory
+python -m tracecrypt.cli.main demo investigate     # Blind forensic attribution (Zero knowledge of original)
+python -m tracecrypt.cli.main demo tamper          # Adversarial test: Rejects identity framing & forged sigs
+python -m tracecrypt.cli.main demo replay          # Adversarial test: Rejects duplicate event replay attacks
+python -m tracecrypt.cli.main demo bft             # BFT consensus test: 4/4 unanimity, 3/4 quorum under f=1
+python -m tracecrypt.cli.main demo robustness      # Watermark boundary evaluation under JPEG & scaling
+```
 
 ---
 

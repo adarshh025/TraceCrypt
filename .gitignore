@@ -68,6 +68,10 @@ data/reports/*
 *.tcdist
 *.pdf
 !tests/fixtures/*.pdf
+!docs/demo/*.pdf
+!docs/sih/evidence/*.pdf
+data/demo/*
+!data/demo/.gitkeep
 
 # Local Logs & Audit Spools
 logs/
