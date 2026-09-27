@@ -16,7 +16,7 @@ In strict compliance with the TraceCrypt Project Contract:
 from __future__ import annotations
 
 import base64
-from typing import ClassVar, Dict, Optional, Protocol, runtime_checkable
+from typing import Any, ClassVar, Dict, Optional, Protocol, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field
 
 from tracecrypt.crypto.hashing import HashAlgorithm, Hasher
@@ -77,6 +77,16 @@ class PQCIdentityCertificate(BaseModel):
             return base64.b64decode(self.public_key_b64, validate=True)
         except Exception as e:
             raise ValidationError(f"Invalid base64 in certificate public key: {e}") from e
+
+    def get_public_key(self) -> Any:
+        """Construct strongly-typed public key object based on certificate algorithm."""
+        from tracecrypt.crypto.types import MLDSAPublicKey, MLKEMPublicKey
+        raw = self.get_public_key_bytes()
+        if "ML-DSA" in self.algorithm:
+            return MLDSAPublicKey(raw)
+        elif "ML-KEM" in self.algorithm:
+            return MLKEMPublicKey(raw)
+        raise ValidationError(f"Unknown certificate algorithm: {self.algorithm}")
 
     def to_canonical_json(self) -> str:
         """Serialize full certificate envelope to RFC 8785 canonical JSON string."""

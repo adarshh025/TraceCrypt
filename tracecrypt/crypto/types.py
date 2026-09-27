@@ -20,6 +20,7 @@ class KeyPurpose(str, Enum):
     KEY_ENCAPSULATION = "KEY_ENCAPSULATION"
     DIGITAL_SIGNATURE = "DIGITAL_SIGNATURE"
     ROOT_AUTHORITY = "ROOT_AUTHORITY"
+    CONSENSUS_VALIDATION = "CONSENSUS_VALIDATION"
 
 
 class KeyStatus(str, Enum):
@@ -272,6 +273,19 @@ class MLDSAPrivateKey:
     @property
     def algorithm(self) -> str:
         return self.ALGORITHM
+
+    def to_b64(self) -> str:
+        """Encode raw private key bytes to base64."""
+        return base64.b64encode(self.raw_bytes).decode("ascii")
+
+    @classmethod
+    def from_b64(cls, b64_str: str) -> MLDSAPrivateKey:
+        """Construct MLDSAPrivateKey from base64-encoded string."""
+        try:
+            raw = base64.b64decode(b64_str, validate=True)
+            return cls(raw)
+        except Exception as e:
+            raise ValidationError(f"Failed to decode base64 MLDSAPrivateKey: {e}") from e
 
     def zeroize(self) -> None:
         """Actively overwrite private key bytes in memory with zeros."""

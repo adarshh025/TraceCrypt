@@ -48,6 +48,17 @@ If you discover a potential security flaw, vulnerability, or cryptographic weakn
   * **Fail-Closed Release Gate:** `DocumentReleaseGate` permits release only when watermark embedding succeeds, the event signature is valid, the certificate chain is verified, and the ledger confirms final commitment.
   * **Active Buffer Zeroization:** Raw plaintext buffers and recovered CEK are zeroized in `finally:` blocks.
 
+* **Permissioned BFT Distributed Ledger Policy:**
+  * **Replicated State Machine:** Multi-node consensus with $n=4, f=1$ Byzantine fault tolerance and generic quorum $Q = 2f+1$. A single database table or hash chain is strictly prohibited.
+  * **Cryptographic Identity Separation:** Validator consensus keys (`KeyPurpose.CONSENSUS_VALIDATION`) are cryptographically distinct from recipient signing keys (`KeyPurpose.DIGITAL_SIGNATURE`).
+  * **Canonical Vote Authentication:** Consensus messages (`VoteMessage`) bind `chain_id`, `height`, `round`, `vote_type`, `block_hash`, and `validator_id` under domain separator `b"tracecrypt:vote:v1:"`. Cross-chain, cross-height, and cross-round replay attacks are rejected.
+  * **Authoritative Anti-Replay:** Authoritative indexes on `EventID`, `SessionID`, `WatermarkID`, and `TransactionID` prevent re-commitment.
+  * **Binary Merkle Root Commitment:** Block header commits to a binary SHA3-256 Merkle root with explicit domain separators for leaves and inner nodes. Standalone $O(\log N)$ inclusion proofs can be verified independently without database access.
+  * **Deterministic State Root:** State roots are computed from canonical logical state entries, not physical SQLite storage layouts.
+  * **Startup Integrity Verification:** Node startup performs automated end-to-end chain verification, validating all block headers, Merkle roots, commit certificates, and validator signatures from genesis to tip.
+  * **Byzantine Detection & Equivocation:** Conflicting votes signed by the same validator for identical $(H, R)$ automatically generate verifiable `ByzantineEvidence`.
+  * **Zero External Network Dependencies:** Validator networking strictly uses length-prefixed, SHA3-256-framed TCP communication between configured static local peers. DNS, cloud services, and public blockchain connections are prohibited.
+
 ## 5. Security Documentation References
 * [Post-Quantum Cryptography Specification](file:///C:/TraceCrypt/docs/security/pqc.md)
 * [Key Management & Lifecycle](file:///C:/TraceCrypt/docs/security/key-management.md)
@@ -62,4 +73,12 @@ If you discover a potential security flaw, vulnerability, or cryptographic weakn
 * [Attribution Boundary & Legal Semantics](file:///C:/TraceCrypt/docs/security/attribution-boundary.md)
 * [Centralized Document Release Gate](file:///C:/TraceCrypt/docs/security/release-gate.md)
 * [Post-Quantum Event Signing & Verification](file:///C:/TraceCrypt/docs/security/event-signing.md)
-
+* [Ledger Integrity & Cryptographic Security](file:///C:/TraceCrypt/docs/security/ledger-integrity.md)
+* [BFT Ledger Architecture](file:///C:/TraceCrypt/docs/ledger/architecture.md)
+* [Consensus Protocol Specification](file:///C:/TraceCrypt/docs/ledger/consensus.md)
+* [Block & Transaction Format Specification](file:///C:/TraceCrypt/docs/ledger/block-format.md)
+* [Merkle Inclusion Proofs Specification](file:///C:/TraceCrypt/docs/ledger/merkle-proofs.md)
+* [Replicated State Machine Semantics](file:///C:/TraceCrypt/docs/ledger/state-machine.md)
+* [Byzantine Fault Model & Equivocation Defense](file:///C:/TraceCrypt/docs/ledger/byzantine-model.md)
+* [Air-Gapped LAN Networking Protocol](file:///C:/TraceCrypt/docs/ledger/networking.md)
+* [Cluster Deployment Guide](file:///C:/TraceCrypt/docs/ledger/deployment.md)

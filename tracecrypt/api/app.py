@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import os
+from pathlib import Path
 import platform
 from typing import Any, Dict, List, Optional
 
@@ -41,7 +42,10 @@ from tracecrypt.event.verifier import DecryptionEventVerifier
 from tracecrypt.identity.certificate import CertificateValidator, PQCIdentityCertificate
 from tracecrypt.identity.keystore import EncryptedKeyContainer, KeystoreManager
 from tracecrypt.identity.lifecycle import OfflineRevocationStore
+from tracecrypt.ledger.block import BlockHeader, LedgerTransaction
 from tracecrypt.ledger.in_memory_adapter import InMemoryLedgerAdapter
+from tracecrypt.ledger.merkle import MerkleInclusionProof, MerkleTree
+from tracecrypt.ledger.storage import LedgerStorage
 from tracecrypt.models.domain import Document, User, UserRole, UserStatus
 from tracecrypt.watermark.types import WatermarkParameters
 from tracecrypt.security.airgap import AirGapGuard
@@ -1072,5 +1076,149 @@ def create_app() -> FastAPI:
                 watermark_binding_verified=False,
                 errors=[f"Verification error: {e}"],
             )
+
+    # -------------------------------------------------------------------------
+    # Ledger Subsystem Endpoints
+    # -------------------------------------------------------------------------
+
+    def _get_api_ledger_storage() -> LedgerStorage:
+        cluster_node = Path("C:/TraceCrypt/cluster_data/node-1/ledger.db")
+        if cluster_node.exists():
+            return LedgerStorage(cluster_node)
+        settings = get_settings()
+        return LedgerStorage(settings.storage.data_dir / "ledger.db")
+
+    @app.get("/ledger/status")
+    async def get_ledger_status() -> Dict[str, Any]:
+        """Query current finalized ledger status, height, and cryptographic roots."""
+        storage = _get_api_ledger_storage()
+        try:
+            gen = storage.get_genesis()
+            latest_blk = storage.get_latest_block()
+            state_root = "NONE"
+            if latest_blk:
+                state_root = latest_blk.header.state_root
+            elif gen:
+                state_root = gen.initial_state_root
+
+            return {
+                "chain_id": gen.chain_id if gen else "unknown",
+                "height": storage.get_latest_height(),
+                "latest_block_hash": latest_blk.header.block_hash if latest_blk else "NONE",
+                "state_root": state_root,
+                "validator_count": len(gen.validator_set.validators) if gen else 0,
+                "byzantine_evidence_count": len(storage.get_byzantine_evidence()),
+            }
+        finally:
+            storage.close()
+
+    @app.get("/ledger/blocks/{height}")
+    async def get_ledger_block(height: int) -> Dict[str, Any]:
+        """Query finalized block by height."""
+        storage = _get_api_ledger_storage()
+        try:
+            block = storage.get_block(height)
+            if not block:
+                raise HTTPException(status_code=404, detail=f"Block {height} not found")
+            return block.to_canonical_dict()
+        finally:
+            storage.close()
+
+    @app.get("/ledger/transactions/{transaction_id}")
+    async def get_ledger_transaction(transaction_id: str) -> Dict[str, Any]:
+        """Query committed transaction by TransactionID."""
+        storage = _get_api_ledger_storage()
+        try:
+            res = storage.get_transaction_with_block(transaction_id)
+            if not res:
+                raise HTTPException(status_code=404, detail=f"Transaction {transaction_id} not found")
+            tx, blk, idx = res
+            return {
+                "transaction": tx.to_canonical_dict(),
+                "block_height": blk.header.height,
+                "index_in_block": idx,
+                "block_hash": blk.header.block_hash,
+            }
+        finally:
+            storage.close()
+
+    @app.get("/ledger/events/{event_id}")
+    async def get_ledger_event(event_id: str) -> Dict[str, Any]:
+        """Query committed decryption event by EventID."""
+        storage = _get_api_ledger_storage()
+        try:
+            signed_evt = storage.get_event(event_id)
+            if not signed_evt:
+                raise HTTPException(status_code=404, detail=f"Event {event_id} not found")
+            return signed_evt.model_dump()
+        finally:
+            storage.close()
+
+    @app.get("/ledger/watermarks/{watermark_id}")
+    async def get_ledger_watermark(watermark_id: str) -> Dict[str, Any]:
+        """Forensic lookup: query committed event by embedded WatermarkID."""
+        storage = _get_api_ledger_storage()
+        try:
+            signed_evt = storage.lookup_by_watermark(watermark_id)
+            if not signed_evt:
+                raise HTTPException(status_code=404, detail=f"Watermark {watermark_id} not found")
+            return signed_evt.model_dump()
+        finally:
+            storage.close()
+
+    @app.get("/ledger/proofs/{transaction_id}")
+    async def get_ledger_proof(transaction_id: str) -> Dict[str, Any]:
+        """Retrieve standalone cryptographic Merkle inclusion proof for a transaction."""
+        storage = _get_api_ledger_storage()
+        try:
+            proof_bundle = storage.export_merkle_proof(transaction_id)
+            # Verify proof before returning to client
+            proof = MerkleInclusionProof.model_validate(proof_bundle["merkle_proof"])
+            header = BlockHeader.model_validate(proof_bundle["block_header"])
+            tx = LedgerTransaction.model_validate(proof_bundle["transaction"])
+            tx_leaf = MerkleTree.compute_leaf_hash(tx.to_canonical_bytes())
+            verified = MerkleTree.verify_merkle_proof(tx_leaf, proof, header.transaction_root)
+
+            proof_bundle["mathematically_verified"] = verified
+            return proof_bundle
+        except Exception as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        finally:
+            storage.close()
+
+    @app.post("/ledger/verify")
+    async def verify_ledger_chain(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
+        """Perform end-to-end cryptographic verification of local ledger chain."""
+        storage = _get_api_ledger_storage()
+        try:
+            gen = storage.get_genesis()
+            if not gen:
+                raise HTTPException(status_code=500, detail="Genesis config not found")
+            passed = storage.verify_chain(gen.validator_set)
+            return {
+                "status": "VERIFIED",
+                "clean": passed,
+                "latest_height": storage.get_latest_height(),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Chain verification failed: {e}")
+        finally:
+            storage.close()
+
+    @app.get("/ledger/validators")
+    async def get_ledger_validators() -> Dict[str, Any]:
+        """List active permissioned consensus validators."""
+        storage = _get_api_ledger_storage()
+        try:
+            gen = storage.get_genesis()
+            if not gen:
+                raise HTTPException(status_code=500, detail="Genesis config not found")
+            return {
+                "validators": [v.model_dump() for v in gen.validator_set.validators],
+                "quorum_threshold": gen.validator_set.quorum,
+                "total_voting_power": gen.validator_set.total_voting_power,
+            }
+        finally:
+            storage.close()
 
     return app

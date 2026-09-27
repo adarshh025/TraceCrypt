@@ -58,6 +58,7 @@ from tracecrypt.identity.certificate import CertificateValidator, PQCIdentityCer
 from tracecrypt.identity.keystore import KeystoreManager
 from tracecrypt.identity.lifecycle import KeyLifecycleManager, OfflineRevocationStore, RevocationReason
 from tracecrypt.ledger.in_memory_adapter import InMemoryLedgerAdapter
+from tracecrypt.ledger.storage import LedgerStorage
 from tracecrypt.security.airgap import AirGapGuard
 from tracecrypt.storage.sqlite_store import SQLiteStorageManager
 from tracecrypt.utils.identifiers import SessionID, WatermarkID
@@ -259,6 +260,57 @@ def build_parser() -> argparse.ArgumentParser:
 
     evt_canon = evt_sub.add_parser("canonicalize", help="RFC 8785 canonicalize an event and compute SHA3-256 digest")
     evt_canon.add_argument("event", help="Path to event JSON file")
+
+    # Command: ledger
+    ledger_parser = subparsers.add_parser("ledger", help="Offline BFT Permissioned Distributed Ledger operations")
+    ledger_sub = ledger_parser.add_subparsers(dest="subcommand", help="Ledger operations")
+
+    led_init = ledger_sub.add_parser("init", help="Initialize local node or 4-validator cluster genesis")
+    led_init.add_argument("--cluster-dir", default=None, help="Cluster directory for 4-node setup")
+    led_init.add_argument("--chain-id", default="tracecrypt-airgap-1", help="Chain ID")
+
+    led_start = ledger_sub.add_parser("start", help="Start local ledger validator node")
+    led_start.add_argument("--node-dir", default=None, help="Node configuration directory")
+    led_start.add_argument("--port", type=int, default=9101, help="Listen port")
+
+    led_status = ledger_sub.add_parser("status", help="Query local node or cluster ledger status")
+    led_status.add_argument("--node-dir", default=None, help="Node directory")
+    led_status.add_argument("--cluster-dir", default=None, help="Cluster directory")
+
+    led_blocks = ledger_sub.add_parser("blocks", help="List recent finalized blocks")
+    led_blocks.add_argument("--node-dir", default=None, help="Node directory")
+    led_blocks.add_argument("--limit", type=int, default=10, help="Number of blocks to display")
+
+    led_block = ledger_sub.add_parser("block", help="Retrieve finalized block by height")
+    led_block.add_argument("height", type=int, help="Block height")
+    led_block.add_argument("--node-dir", default=None, help="Node directory")
+
+    led_verify = ledger_sub.add_parser("verify", help="Verify cryptographic chain integrity from genesis to tip")
+    led_verify.add_argument("--node-dir", default=None, help="Node directory")
+    led_verify.add_argument("--cluster-dir", default=None, help="Cluster directory")
+
+    led_tx = ledger_sub.add_parser("tx", help="Lookup committed transaction by TransactionID")
+    led_tx.add_argument("transaction_id", help="Transaction ID (tx-...)")
+    led_tx.add_argument("--node-dir", default=None, help="Node directory")
+
+    led_event = ledger_sub.add_parser("event", help="Lookup committed event by EventID")
+    led_event.add_argument("event_id", help="Event ID (evt-...)")
+    led_event.add_argument("--node-dir", default=None, help="Node directory")
+
+    led_wm = ledger_sub.add_parser("watermark", help="Forensic lookup: retrieve event by WatermarkID")
+    led_wm.add_argument("watermark_id", help="Watermark ID (wm-...)")
+    led_wm.add_argument("--node-dir", default=None, help="Node directory")
+
+    led_proof = ledger_sub.add_parser("proof", help="Export standalone cryptographic Merkle inclusion proof")
+    led_proof.add_argument("transaction_id", help="Transaction ID (tx-...)")
+    led_proof.add_argument("--node-dir", default=None, help="Node directory")
+
+    led_sync = ledger_sub.add_parser("sync", help="Synchronize missing blocks from peer")
+    led_sync.add_argument("--node-dir", default=None, help="Node directory")
+    led_sync.add_argument("--peer", required=True, help="Peer address (host:port)")
+
+    led_val = ledger_sub.add_parser("validators", help="List active consensus validators and voting weights")
+    led_val.add_argument("--node-dir", default=None, help="Node directory")
 
     return parser
 
@@ -1573,8 +1625,326 @@ def cmd_event_canonicalize(args: argparse.Namespace) -> int:
 
 
 # -------------------------------------------------------------------------
+# Ledger Subsystem CLI Handlers
+# -------------------------------------------------------------------------
+
+def _resolve_ledger_db(args: argparse.Namespace) -> Path:
+    if hasattr(args, "node_dir") and args.node_dir:
+        return Path(args.node_dir) / "ledger.db"
+    settings = get_settings()
+    default_cluster_node = Path("C:/TraceCrypt/cluster_data/node-1/ledger.db")
+    if default_cluster_node.exists():
+        return default_cluster_node
+    return settings.storage.data_dir / "ledger.db"
+
+
+def cmd_ledger_init(args: argparse.Namespace) -> int:
+    from scripts.run_ledger_cluster import init_cluster
+    cluster_dir = Path(args.cluster_dir) if args.cluster_dir else Path("C:/TraceCrypt/cluster_data")
+    print(f"Initializing TraceCrypt permissioned BFT ledger cluster at: {cluster_dir}")
+    init_cluster(cluster_dir, args.chain_id)
+    print("Ledger initialization completed successfully.")
+    return 0
+
+
+def cmd_ledger_start(args: argparse.Namespace) -> int:
+    node_dir = Path(args.node_dir) if args.node_dir else Path("C:/TraceCrypt/cluster_data/node-1")
+    if not node_dir.exists():
+        print(f"Error: Node directory '{node_dir}' not found.", file=sys.stderr)
+        return 1
+    from scripts.run_ledger_cluster import load_node
+    node = load_node(node_dir)
+    print(f"Starting BFT Ledger Validator Node '{node.validator_id}'...")
+    print(f"Listening on: {node.network.listen_host}:{node.network.listen_port}")
+    import asyncio
+    try:
+        asyncio.run(node.start())
+        print("Node is active and participating in consensus. Press Ctrl+C to stop.")
+        asyncio.get_event_loop().run_forever()
+    except KeyboardInterrupt:
+        print("\nStopping validator node...")
+        asyncio.run(node.stop())
+    return 0
+
+
+def cmd_ledger_status(args: argparse.Namespace) -> int:
+    if hasattr(args, "cluster_dir") and args.cluster_dir:
+        from scripts.run_ledger_cluster import cluster_status
+        cluster_status(Path(args.cluster_dir))
+        return 0
+
+    db_path = _resolve_ledger_db(args)
+    if not db_path.exists():
+        print(f"Ledger storage database not found at: {db_path}", file=sys.stderr)
+        return 1
+
+    storage = LedgerStorage(db_path)
+    try:
+        gen = storage.get_genesis()
+        height = storage.get_latest_height()
+        latest_blk = storage.get_latest_block()
+        b_hash = latest_blk.header.block_hash if latest_blk else "NONE (GENESIS)"
+        s_root = latest_blk.header.state_root if latest_blk else (gen.initial_state_root if gen else "N/A")
+
+        print("=== TraceCrypt BFT Ledger Status ===")
+        print(f"Database Path:        {db_path}")
+        print(f"Chain ID:             {gen.chain_id if gen else 'N/A'}")
+        print(f"Committed Height:     {height}")
+        print(f"Latest Block Hash:    {b_hash}")
+        print(f"Logical State Root:   {s_root}")
+        print(f"Active Validators:    {len(gen.validator_set.validators) if gen else 0}")
+        print(f"Byzantine Evidence:   {len(storage.get_byzantine_evidence())}")
+        return 0
+    finally:
+        storage.close()
+
+
+def cmd_ledger_blocks(args: argparse.Namespace) -> int:
+    db_path = _resolve_ledger_db(args)
+    if not db_path.exists():
+        print(f"Ledger database not found at: {db_path}", file=sys.stderr)
+        return 1
+
+    storage = LedgerStorage(db_path)
+    try:
+        latest = storage.get_latest_height()
+        start = max(1, latest - args.limit + 1)
+        blocks = storage.get_blocks(start_height=start, limit=args.limit)
+
+        print(f"\nListing latest {len(blocks)} finalized blocks (tip height: {latest}):")
+        print(f"{'Height':<8} | {'Block Hash':<38} | {'Proposer':<24} | {'Txs':<5}")
+        print("-" * 80)
+        for b in blocks:
+            b_hash = b.header.block_hash[:34] + "..."
+            p_id = str(b.header.proposer_id)[:20] + "..."
+            print(f"{b.header.height:<8} | {b_hash:<38} | {p_id:<24} | {len(b.transactions):<5}")
+        print("-" * 80)
+        return 0
+    finally:
+        storage.close()
+
+
+def cmd_ledger_block(args: argparse.Namespace) -> int:
+    db_path = _resolve_ledger_db(args)
+    if not db_path.exists():
+        print(f"Ledger database not found at: {db_path}", file=sys.stderr)
+        return 1
+
+    storage = LedgerStorage(db_path)
+    try:
+        block = storage.get_block(args.height)
+        if not block:
+            print(f"Error: Block at height {args.height} not found.", file=sys.stderr)
+            return 1
+
+        h = block.header
+        print(f"\n=== Block Height {h.height} Details ===")
+        print(f"Chain ID:             {h.chain_id}")
+        print(f"Block Hash:           {h.block_hash}")
+        print(f"Parent Hash:          {h.previous_block_hash}")
+        print(f"Round Finalized:      {h.round}")
+        print(f"Proposer ID:          {h.proposer_id}")
+        print(f"Timestamp (UTC):      {h.timestamp}")
+        print(f"Transaction Root:     {h.transaction_root}")
+        print(f"State Root:           {h.state_root}")
+        print(f"Validator Set Hash:   {h.validator_set_hash}")
+        print(f"Included Txs:         {len(block.transactions)}")
+        for idx, tx in enumerate(block.transactions):
+            print(f"  [{idx}] TxID: {tx.transaction_id} | EventID: {tx.event_id}")
+
+        if block.commit_certificate:
+            cert = block.commit_certificate
+            print(f"\nCommit Certificate:   VALID (Round {cert.round}, Votes: {len(cert.votes)})")
+            for v in cert.votes:
+                print(f"  - Validator: {v.validator_id} (Vote: {v.vote_type.value})")
+        return 0
+    finally:
+        storage.close()
+
+
+def cmd_ledger_verify(args: argparse.Namespace) -> int:
+    if hasattr(args, "cluster_dir") and args.cluster_dir:
+        from scripts.run_ledger_cluster import verify_cluster_integrity
+        verify_cluster_integrity(Path(args.cluster_dir))
+        return 0
+
+    db_path = _resolve_ledger_db(args)
+    if not db_path.exists():
+        print(f"Ledger database not found at: {db_path}", file=sys.stderr)
+        return 1
+
+    storage = LedgerStorage(db_path)
+    try:
+        gen = storage.get_genesis()
+        if not gen:
+            print("Error: Genesis configuration missing from ledger database.", file=sys.stderr)
+            return 1
+
+        print(f"Verifying cryptographic chain integrity on: {db_path}...")
+        storage.verify_chain(gen.validator_set)
+        print(f"[PASS] Cryptographic verification clean from genesis through height {storage.get_latest_height()}.")
+        return 0
+    except Exception as e:
+        print(f"[FAIL] Cryptographic integrity violation detected: {e}", file=sys.stderr)
+        return 1
+    finally:
+        storage.close()
+
+
+def cmd_ledger_tx(args: argparse.Namespace) -> int:
+    db_path = _resolve_ledger_db(args)
+    if not db_path.exists():
+        print(f"Ledger database not found at: {db_path}", file=sys.stderr)
+        return 1
+
+    storage = LedgerStorage(db_path)
+    try:
+        res = storage.get_transaction_with_block(args.transaction_id)
+        if not res:
+            print(f"Transaction '{args.transaction_id}' not found.", file=sys.stderr)
+            return 1
+
+        tx, block, idx = res
+        evt = tx.signed_event.event
+        print(f"\n=== Transaction {tx.transaction_id} ===")
+        print(f"Committed Height:     {block.header.height} (Index: {idx})")
+        print(f"Block Hash:           {block.header.block_hash}")
+        print(f"Event ID:             {evt.event_id}")
+        print(f"Recipient ID:         {evt.recipient_id}")
+        print(f"Document ID:          {evt.document_id}")
+        print(f"Session ID:           {evt.session_id}")
+        print(f"Watermark ID:         {evt.watermark_id}")
+        print(f"Event Digest:         {tx.signed_event.event_digest}")
+        print(f"Submitted At (UTC):   {tx.submitted_at}")
+        return 0
+    finally:
+        storage.close()
+
+
+def cmd_ledger_event(args: argparse.Namespace) -> int:
+    db_path = _resolve_ledger_db(args)
+    if not db_path.exists():
+        print(f"Ledger database not found at: {db_path}", file=sys.stderr)
+        return 1
+
+    storage = LedgerStorage(db_path)
+    try:
+        signed_evt = storage.get_event(args.event_id)
+        if not signed_evt:
+            print(f"Committed event '{args.event_id}' not found.", file=sys.stderr)
+            return 1
+
+        evt = signed_evt.event
+        print(f"\n=== Committed DecryptionEvent {evt.event_id} ===")
+        print(f"Recipient ID:         {evt.recipient_id}")
+        print(f"Document ID:          {evt.document_id}")
+        print(f"Session ID:           {evt.session_id}")
+        print(f"Watermark ID:         {evt.watermark_id}")
+        print(f"Document Hash:        {evt.document_hash}")
+        print(f"Event Digest:         {signed_evt.event_digest}")
+        print(f"Signer Cert ID:       {signed_evt.certificate_id}")
+        return 0
+    finally:
+        storage.close()
+
+
+def cmd_ledger_watermark(args: argparse.Namespace) -> int:
+    db_path = _resolve_ledger_db(args)
+    if not db_path.exists():
+        print(f"Ledger database not found at: {db_path}", file=sys.stderr)
+        return 1
+
+    storage = LedgerStorage(db_path)
+    try:
+        signed_evt = storage.lookup_by_watermark(args.watermark_id)
+        if not signed_evt:
+            print(f"Forensic lookup: No event registered for WatermarkID '{args.watermark_id}'.", file=sys.stderr)
+            return 1
+
+        evt = signed_evt.event
+        print("\n=== Forensic Ledger Watermark Attribution Match ===")
+        print(f"Watermark ID:         {evt.watermark_id}")
+        print(f"Matched Event ID:     {evt.event_id}")
+        print(f"Attributed Recipient: {evt.recipient_id}")
+        print(f"Session ID:           {evt.session_id}")
+        print(f"Document ID:          {evt.document_id}")
+        print(f"Document Hash:        {evt.document_hash}")
+        print(f"Decryption Time:      {evt.timestamp}")
+        return 0
+    finally:
+        storage.close()
+
+
+def cmd_ledger_proof(args: argparse.Namespace) -> int:
+    db_path = _resolve_ledger_db(args)
+    if not db_path.exists():
+        print(f"Ledger database not found at: {db_path}", file=sys.stderr)
+        return 1
+
+    storage = LedgerStorage(db_path)
+    try:
+        proof_bundle = storage.export_merkle_proof(args.transaction_id)
+        import json
+        from tracecrypt.ledger.merkle import MerkleInclusionProof, MerkleTree
+        from tracecrypt.ledger.block import BlockHeader, LedgerTransaction
+
+        proof = MerkleInclusionProof.model_validate(proof_bundle["merkle_proof"])
+        header = BlockHeader.model_validate(proof_bundle["block_header"])
+        tx = LedgerTransaction.model_validate(proof_bundle["transaction"])
+
+        # Independent mathematical verification
+        tx_leaf_hash = MerkleTree.compute_leaf_hash(tx.to_canonical_bytes())
+        verified = MerkleTree.verify_merkle_proof(tx_leaf_hash, proof, header.transaction_root)
+
+        print("\n=== Cryptographic Merkle Inclusion Proof Bundle ===")
+        print(f"Transaction ID:        {tx.transaction_id}")
+        print(f"Target Block Height:   {header.height}")
+        print(f"Target Block Hash:     {header.block_hash}")
+        print(f"Transaction Root:      {header.transaction_root}")
+        print(f"Leaf Index in Tree:    {proof.leaf_index}")
+        print(f"Audit Path Steps:      {len(proof.audit_path)}")
+        print(f"Proof Verification:    {'SUCCESSFULLY VERIFIED' if verified else 'FAILED'}")
+        print("\nCanonical Proof Bundle JSON:")
+        print(json.dumps(proof_bundle, indent=2))
+        return 0 if verified else 1
+    except Exception as e:
+        print(f"Proof generation failed: {e}", file=sys.stderr)
+        return 1
+    finally:
+        storage.close()
+
+
+def cmd_ledger_validators(args: argparse.Namespace) -> int:
+    db_path = _resolve_ledger_db(args)
+    if not db_path.exists():
+        print(f"Ledger database not found at: {db_path}", file=sys.stderr)
+        return 1
+
+    storage = LedgerStorage(db_path)
+    try:
+        gen = storage.get_genesis()
+        if not gen:
+            print("Genesis configuration not found in storage.", file=sys.stderr)
+            return 1
+
+        val_set = gen.validator_set
+        print(f"\nActive Permissioned Consensus Validators (Quorum: {val_set.quorum} of {val_set.total_voting_power}):")
+        print(f"{'Validator ID':<38} | {'Power':<5} | {'Role':<10} | {'Certificate Fingerprint':<30}")
+        print("-" * 90)
+        for v in val_set.validators:
+            v_id = str(v.validator_id)
+            fp = v.certificate_fingerprint[:26] + "..."
+            print(f"{v_id:<38} | {v.voting_power:<5} | {v.role.value:<10} | {fp:<30}")
+        print("-" * 90)
+        return 0
+    finally:
+        storage.close()
+
+
+# -------------------------------------------------------------------------
 # Main Router
 # -------------------------------------------------------------------------
+
 
 def main(args: Optional[List[str]] = None) -> int:
     """CLI entrypoint."""
@@ -1673,6 +2043,31 @@ def main(args: Optional[List[str]] = None) -> int:
             return cmd_event_verify(parsed)
         elif parsed.subcommand == "canonicalize":
             return cmd_event_canonicalize(parsed)
+        parser.print_help()
+        return 0
+    elif parsed.command == "ledger":
+        if parsed.subcommand == "init":
+            return cmd_ledger_init(parsed)
+        elif parsed.subcommand == "start":
+            return cmd_ledger_start(parsed)
+        elif parsed.subcommand == "status":
+            return cmd_ledger_status(parsed)
+        elif parsed.subcommand == "blocks":
+            return cmd_ledger_blocks(parsed)
+        elif parsed.subcommand == "block":
+            return cmd_ledger_block(parsed)
+        elif parsed.subcommand == "verify":
+            return cmd_ledger_verify(parsed)
+        elif parsed.subcommand == "tx":
+            return cmd_ledger_tx(parsed)
+        elif parsed.subcommand == "event":
+            return cmd_ledger_event(parsed)
+        elif parsed.subcommand == "watermark":
+            return cmd_ledger_watermark(parsed)
+        elif parsed.subcommand == "proof":
+            return cmd_ledger_proof(parsed)
+        elif parsed.subcommand == "validators":
+            return cmd_ledger_validators(parsed)
         parser.print_help()
         return 0
     else:

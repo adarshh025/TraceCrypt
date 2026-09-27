@@ -124,3 +124,8 @@ def verify(
 ) -> bool:
     """Convenience helper to verify an ML-DSA-65 signature."""
     return _GLOBAL_MLDSA.verify(public_key, message, signature)
+
+
+# Aliases for explicit domain naming
+sign_mldsa = sign
+verify_mldsa = verify

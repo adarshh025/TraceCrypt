@@ -111,3 +111,48 @@ class ReplayAttackError(SecurityError):
 class AttributionPipelineError(TraceCryptError):
     """Raised when recipient attribution pipeline encounters an unrecoverable failure."""
     pass
+
+
+class ConsensusError(LedgerError):
+    """Raised when consensus voting, round changes, or proposals violate rules."""
+    pass
+
+
+class ByzantineFaultDetected(ConsensusError):
+    """Raised when cryptographically provable equivocation or malicious behavior is detected."""
+    pass
+
+
+class QuorumNotReachedError(ConsensusError):
+    """Raised when insufficient valid validator votes exist to commit a block."""
+    pass
+
+
+class BlockValidationError(LedgerError):
+    """Raised when a proposed or received block fails cryptographic or structural validation."""
+    pass
+
+
+class TransactionValidationError(LedgerError):
+    """Raised when a ledger transaction fails cryptographic or state validation."""
+    pass
+
+
+class MerkleProofError(TraceCryptError):
+    """Raised when Merkle tree construction or inclusion proof verification fails."""
+    pass
+
+
+class ChainVerificationError(LedgerError):
+    """Raised when startup or audit chain verification detects broken hash links or invalid proofs."""
+    pass
+
+
+class StateSyncError(LedgerError):
+    """Raised when node state synchronization fails or receives invalid catch-up blocks."""
+    pass
+
+
+class NetworkError(TraceCryptError):
+    """Raised when offline LAN network framing, transport, or peer communication fails."""
+    pass

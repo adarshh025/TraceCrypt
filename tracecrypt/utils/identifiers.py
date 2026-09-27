@@ -45,6 +45,12 @@ class BaseID(str):
         return super().__new__(cls, value)
 
     @classmethod
+    def generate(cls: Type[T]) -> T:
+        """Generate a strongly-typed identifier with 128 bits of CSPRNG entropy."""
+        import os
+        return cls(f"{cls.PREFIX}{os.urandom(16).hex()}")
+
+    @classmethod
     def from_raw_hex(cls: Type[T], hex_string: str) -> T:
         """Create an identifier from a 32-character hex string."""
         if not isinstance(hex_string, str):
@@ -133,3 +139,9 @@ class CaseID(BaseID):
     """Unique identifier for a forensic investigation case."""
     PREFIX: ClassVar[str] = "cas-"
     PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"^cas-[a-f0-9]{32}$")
+
+
+class ValidatorID(BaseID):
+    """Unique identifier for a consensus validator node."""
+    PREFIX: ClassVar[str] = "val-"
+    PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"^val-[a-f0-9]{32}$")

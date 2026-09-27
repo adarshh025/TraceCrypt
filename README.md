@@ -92,7 +92,22 @@ TraceCrypt is an offline, post-quantum, air-gapped document distribution and for
   * **DecryptionEventLedger Protocol & In-Memory Adapter:** Strict ledger interface with anti-replay detection on `EventID`, `SessionID`, `WatermarkID`, and `(DocumentID, SessionID)`.
   * **Centralized DocumentReleaseGate:** Fail-closed gate evaluating watermark integrity, event signature, certificate chain, and ledger finality (`RELEASE_ALLOWED` vs `RELEASE_DENIED`).
   * **CLI & API Integration:** Commands for offline package validation, decryption simulation, event inspection, canonicalization, and verification.
-  * **Quality Gates:** 319 passing tests (100%), 0 flake8 errors, air-gap verified, performance benchmarked.
+* [x] **Phase 6 / 7: Permissioned Distributed Ledger & BFT Consensus Subsystem:**
+  * **4-Node BFT Replicated State Machine:** Fault tolerance $n=4, f=1$, generic quorum $Q = 2f+1 = 3$ votes.
+  * **Deterministic Consensus Lifecycle:** Tendermint-inspired round progression (`PROPOSE` -> `PREVOTE` -> `PRECOMMIT` -> `COMMIT`).
+  * **Deterministic Genesis & Proposer Selection:** Canonical genesis hash (`tracecrypt:genesis:`) and round-robin proposer selection based purely on height, round, and active validator set.
+  * **Cryptographic Identity Separation:** Validator consensus keys (`KeyPurpose.CONSENSUS_VALIDATION`) are cryptographically isolated from recipient signing keys (`KeyPurpose.DIGITAL_SIGNATURE`).
+  * **Typed & Replay-Protected Messages:** `VoteMessage` and `CommitCertificate` bind `chain_id`, `height`, `round`, `vote_type`, and `block_hash` under explicit domain separators.
+  * **Transaction Pool & Anti-Replay:** Authoritative tracking and deduplication on `EventID`, `SessionID`, `WatermarkID`, and `TransactionID`. Deterministic transaction ordering by `(submitted_at, transaction_id)`.
+  * **Binary Merkle Transaction Tree:** Deterministic SHA3-256 Merkle tree committing to `transaction_root`. Standalone $O(\log N)$ inclusion proof generation and independent verification without database access.
+  * **Canonical State Root:** Recomputed state roots commit to logical state entries, completely decoupled from physical SQLite storage layouts.
+  * **SQLite WAL Storage & Tamper Detection:** Persistence with startup chain verification, cross-verifying raw SQL columns against canonical header commitments to detect database modifications.
+  * **State Synchronization Catch-Up Protocol:** Lagging or newly restarted nodes synchronize missing blocks with independent cryptographic verification.
+  * **Byzantine Fault Handling:** Conflicting proposals and equivocation trigger `ByzantineFaultDetected` and compile self-authenticating `ByzantineEvidence`.
+  * **2+2 Partition Safety:** Network splits prevent conflicting finality; consensus resumes upon partition healing.
+  * **100% Air-Gapped LAN Networking:** Length-prefixed framing with SHA3-256 checksums over TCP between configured static peers; zero DNS, external RPC, or cloud dependencies.
+  * **CLI & API Integration:** Complete `tracecrypt ledger` commands (`init`, `start`, `status`, `blocks`, `block`, `verify`, `tx`, `event`, `watermark`, `proof`, `validators`) and REST endpoints.
+  * **Cluster Runner:** `scripts/run_ledger_cluster.py` provisions and manages local 4-validator deployments.
 
 ---
 

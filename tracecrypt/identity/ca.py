@@ -105,6 +105,62 @@ class OfflineRootCA:
             signature_b64=sig.to_b64(),
         )
 
+    def issue_validator_certificate(
+        self,
+        subject_id: str,
+        public_key: MLDSAPublicKey,
+        organization: str = "TraceCrypt Consensus",
+        role: str = "Validator",
+        validity_days: int = 365,
+        device_id: Optional[str] = None,
+    ) -> PQCIdentityCertificate:
+        """Issue an identity certificate for ML-DSA-65 consensus validation."""
+        if self._private_key is None:
+            raise SecurityError("Root CA cannot issue certificates without unlocked private key.")
+
+        now = utc_now_micros()
+        valid_until = now + (validity_days * 86_400 * 1_000_000)
+        serial = f"crt-{SecureRandom.random_nonce_128()}"
+
+        cert_proto = PQCIdentityCertificate(
+            format_version=PQCIdentityCertificate.FORMAT_VERSION,
+            serial_number=serial,
+            issuer_ca_id=self.ca_id,
+            subject_id=subject_id,
+            device_id=device_id,
+            organization=organization,
+            role=role,
+            key_purpose=KeyPurpose.CONSENSUS_VALIDATION,
+            algorithm="ML-DSA-65",
+            parameter_set="ML-DSA-65",
+            public_key_b64=public_key.to_b64(),
+            public_key_fingerprint=public_key.fingerprint,
+            valid_from=now,
+            valid_until=valid_until,
+            signature_b64="",
+        )
+
+        signing_bytes = cert_proto.to_signing_bytes()
+        sig = sign_mldsa(self._private_key, signing_bytes)
+
+        return PQCIdentityCertificate(
+            format_version=cert_proto.format_version,
+            serial_number=cert_proto.serial_number,
+            issuer_ca_id=cert_proto.issuer_ca_id,
+            subject_id=cert_proto.subject_id,
+            device_id=cert_proto.device_id,
+            organization=cert_proto.organization,
+            role=cert_proto.role,
+            key_purpose=cert_proto.key_purpose,
+            algorithm=cert_proto.algorithm,
+            parameter_set=cert_proto.parameter_set,
+            public_key_b64=cert_proto.public_key_b64,
+            public_key_fingerprint=cert_proto.public_key_fingerprint,
+            valid_from=cert_proto.valid_from,
+            valid_until=cert_proto.valid_until,
+            signature_b64=sig.to_b64(),
+        )
+
     def issue_kem_certificate(
         self,
         subject_id: str,

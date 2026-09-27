@@ -72,7 +72,8 @@ markers = [
     "unit: Isolated unit tests",
     "integration: Cross-module integration tests",
     "security: Security assertion and attack simulation tests",
-    "slow: Tests with higher compute load"
+    "slow: Tests with higher compute load",
+    "benchmark: Performance and latency benchmark tests"
 ]
 
 [tool.coverage.run]
