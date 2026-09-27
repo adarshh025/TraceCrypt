@@ -96,6 +96,9 @@ class EvidenceIngestion:
                 f"Invalid evidence input type: {type(evidence_input).__name__}. Expected bytes or Path."
             )
 
+        if "\x00" in resolved_filename:
+            raise ForensicEvidenceError("Filename contains forbidden null byte character.")
+
         if not evidence_bytes:
             raise ForensicEvidenceError("Evidence artifact is empty (0 bytes).")
 

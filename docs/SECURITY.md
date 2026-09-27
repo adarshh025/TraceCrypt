@@ -81,3 +81,23 @@ Every production service and CLI invocation performs mandatory pre-flight checks
 3. **Database Integrity Check:** Runs SQLite `PRAGMA integrity_check` and verifies WAL journal mode.
 4. **Ledger Chain Verification:** Confirms block hashes from genesis to tip match canonical headers.
 5. **Air-Gap Assertion:** Verifies zero network interfaces bound to external subnets.
+
+---
+
+## 6. Vulnerability Severity Model
+
+TraceCrypt applies a standardized five-tier vulnerability severity model:
+
+| Severity | Scope and Impact | Remediation Standard |
+| :--- | :--- | :--- |
+| **CRITICAL** | Flaws leading to arbitrary cryptographic key compromise, forged attribution events, bypassed BFT safety, or remote/local code execution. | Immediate hotfix; release gate blocked. |
+| **HIGH** | Flaws causing ledger state divergence, denial of service across consensus nodes, unauthenticated document decapsulation, or directory traversal. | Fix required prior to production release. |
+| **MEDIUM** | Incomplete input sanitization, unhandled parser edge cases causing process termination, or non-deterministic verdict evaluation. | Fix required with regression test. |
+| **LOW** | Minor information disclosure in local logs, non-standard exception types, or missing resource boundary assertions. | Remediation in scheduled maintenance cycle. |
+| **INFORMATIONAL**| Security hygiene, defensive hardening suggestions, or operational best practice enhancements. | Tracked for continuous improvement. |
+
+---
+
+## 7. Fundamental Attribution Boundary Notice
+
+TraceCrypt establishes cryptographic non-repudiation between a document decryption event and a certified NIST FIPS 204 ML-DSA-65 private key. TraceCrypt does not independently authenticate the biological identity of the human operator operating the hardware device. Physical attribution is enforced via complementary physical security controls, facility badges, and endpoint monitoring.
