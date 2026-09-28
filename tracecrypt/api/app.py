@@ -1316,4 +1316,8 @@ def create_app() -> FastAPI:
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Proof verification failed: {e}")
 
+    # Mount self-contained air-gapped web UI
+    from tracecrypt.ui import mount_ui
+    mount_ui(app)
+
     return app

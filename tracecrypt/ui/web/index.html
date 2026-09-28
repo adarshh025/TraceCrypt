@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TraceCrypt — Offline Forensic Document Attribution Platform</title>
+  <link rel="stylesheet" href="/ui/style.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="header-top">
+      <div class="logo-group">
+        <div class="logo-badge">TC</div>
+        <div class="title-group">
+          <h1>TraceCrypt Forensic Platform</h1>
+          <p>Cryptographic Attribution & Immutable Decryption Provenance for Multi-Recipient Distribution</p>
+        </div>
+      </div>
+      <div class="sih-badge">
+        SIH 2026 • Problem Statement: SIH26237 • Team Laccha Paratha (138638)
+      </div>
+    </div>
+
+    <!-- Air-Gap Status Indicator -->
+    <div class="airgap-banner" id="airgap-banner">
+      <div class="airgap-indicator">
+        <span class="pulse-dot"></span>
+        AIR-GAPPED OFFLINE SECURITY ENCLAVE
+      </div>
+      <div>
+        <span>Network: <strong>DISABLED</strong></span> &nbsp;•&nbsp;
+        <span>Cloud KMS: <strong>NOT USED</strong></span> &nbsp;•&nbsp;
+        <span>Public Chain: <strong>NOT USED</strong></span> &nbsp;•&nbsp;
+        <span>Telemetry: <strong>DISABLED</strong></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="tab-sender">Sender Workstation</button>
+    <button class="tab-btn" data-tab="tab-recipient">Recipient Workstation</button>
+    <button class="tab-btn" data-tab="tab-investigator">Investigator Workstation</button>
+    <button class="tab-btn" data-tab="tab-ledger">BFT Ledger & Crypto</button>
+  </nav>
+
+  <!-- Main Content -->
+  <main>
+
+    <!-- TAB 1: SENDER WORKSTATION -->
+    <div class="tab-panel active" id="tab-sender">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">1. Multi-Recipient Document Packaging</span>
+          </div>
+          <form id="sender-form">
+            <div class="form-group">
+              <label for="source-doc">Source Document</label>
+              <select id="source-doc">
+                <option value="govt_memorandum.pdf">Government Memorandum (Classified Demo, 3 pages)</option>
+                <option value="corporate_confidential.pdf">Corporate Confidential Strategy (2 pages)</option>
+                <option value="defense_restricted.pdf">Defense Restricted Specification (3 pages)</option>
+                <option value="financial_audit.pdf">Quarterly Financial Audit Report (2 pages)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Authorized Recipients (Post-Quantum ML-KEM-768 Envelopes)</label>
+              <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
+                <label style="display:flex; align-items:center; gap:0.4rem; font-weight:normal;">
+                  <input type="checkbox" id="recip-alice" checked disabled> Alice (Intelligence Officer)
+                </label>
+                <label style="display:flex; align-items:center; gap:0.4rem; font-weight:normal;">
+                  <input type="checkbox" id="recip-bob" checked disabled> Bob (Defense Analyst)
+                </label>
+                <label style="display:flex; align-items:center; gap:0.4rem; font-weight:normal;">
+                  <input type="checkbox" id="recip-charlie" checked disabled> Charlie (Operations Lead)
+                </label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Cryptographic Ciphersuite</label>
+              <div class="metric-box" style="font-size: 0.85rem; font-family: var(--font-mono);">
+                AES-256-GCM (Symmetric Payload) + NIST FIPS 203 ML-KEM-768 (KEM Wrapping)
+              </div>
+            </div>
+            <button type="button" class="btn btn-primary btn-block" id="btn-package">
+              Encrypt & Package (.tcdist)
+            </button>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Package Telemetry & Verification</span>
+          </div>
+          <div id="sender-telemetry">
+            <div class="metric-box">
+              <div class="metric-title">17-Point Package Validation</div>
+              <div class="metric-value" id="pkg-val-status" style="color: var(--accent-green);">VERIFIED (17/17)</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-title">Package Output Path</div>
+              <div class="metric-value" style="font-size: 0.85rem;" id="pkg-path">classified_demo.tcdist</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-title">Source SHA3-256 Digest</div>
+              <div class="metric-value" style="font-size: 0.75rem;" id="pkg-hash">sha3-256:f636f44f2ca8471e5fefeff...</div>
+            </div>
+          </div>
+          <div class="terminal-window" id="sender-log">Sender workstation initialized. Ready to package confidential assets.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: RECIPIENT WORKSTATION -->
+    <div class="tab-panel" id="tab-recipient">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">2. Atomic Release Gate & Decryption</span>
+          </div>
+          <div class="form-group">
+            <label for="decrypt-recipient">Authenticate Recipient Credentials</label>
+            <select id="decrypt-recipient">
+              <option value="alice">Alice (Intelligence Officer - rcp-...a11ce)</option>
+              <option value="bob">Bob (Defense Analyst - rcp-...0b0b)</option>
+              <option value="charlie">Charlie (Operations Lead - rcp-...c4a711e)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Decryption Pipeline Invariants</label>
+            <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.6;">
+              1. Decapsulate AES key in memory via ML-KEM-768.<br>
+              2. Embed invisible DWT-DCT watermark (SessionID + RecipientID).<br>
+              3. Generate canonical RFC 8785 event & sign with ML-DSA-65.<br>
+              4. Commit event to 4-node BFT ledger.<br>
+              5. <strong>Assert release gate:</strong> Plaintext released only after quorum confirmation.
+            </div>
+          </div>
+          <button type="button" class="btn btn-success btn-block" id="btn-decrypt">
+            Execute Atomic Decryption
+          </button>
+          <div style="margin-top: 1rem;">
+            <button type="button" class="btn btn-secondary btn-block" id="btn-compare">
+              Compare Alice vs. Bob Copies (PSNR / SSIM)
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Decryption & Fidelity Telemetry</span>
+          </div>
+          <div class="grid-2">
+            <div class="metric-box">
+              <div class="metric-title">Decryption Fidelity (PSNR)</div>
+              <div class="metric-value" id="dec-psnr">40.59 dB</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-title">Structural Similarity (SSIM)</div>
+              <div class="metric-value" id="dec-ssim">0.9053</div>
+            </div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-title">Committed Block Height</div>
+            <div class="metric-value" id="dec-height">Block #2</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-title">Generated Watermark ID</div>
+            <div class="metric-value" style="font-size: 0.8rem;" id="dec-wm-id">wm-435a2dfe8c015c7f49806b90387d77d0</div>
+          </div>
+          <div class="terminal-window" id="recipient-log">Recipient terminal ready. Atomic release gate armed.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: INVESTIGATOR WORKSTATION -->
+    <div class="tab-panel" id="tab-investigator">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">3. Blind Forensic Leak Investigation</span>
+          </div>
+          <div class="form-group">
+            <label for="leak-source">Simulated Leaked Evidence Document</label>
+            <select id="leak-source">
+              <option value="alice">LEAKED_DOCUMENT.pdf (Exfiltrated by Alice)</option>
+              <option value="bob">LEAKED_DOCUMENT.pdf (Exfiltrated by Bob)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <div class="metric-box" style="font-size: 0.8rem; color: #93c5fd;">
+              <strong>Forensic Guarantee:</strong> Extraction is completely <em>blind</em>. The investigator does NOT have access to the original source document or recipient private keys.
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary btn-block" id="btn-investigate">
+            Execute Blind Investigation & Attribution
+          </button>
+          <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+            <button type="button" class="btn btn-danger btn-block" id="btn-tamper">
+              Test Tampering Rejection
+            </button>
+            <button type="button" class="btn btn-secondary btn-block" id="btn-replay">
+              Test Replay Rejection
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Forensic Verdict & Attribution Dossier</span>
+          </div>
+          
+          <div class="verdict-card VERIFIED" id="verdict-display">
+            <div class="verdict-title" id="verdict-text">VERIFIED</div>
+            <div style="font-size: 0.9rem; margin-top: 0.5rem;" id="verdict-subject">
+              Attributed Leaker: Alice Intelligence Officer
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="metric-box">
+              <div class="metric-title">Correlation Metric (&tau;)</div>
+              <div class="metric-value" id="inv-corr">6.772 (&ge; 4.0)</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-title">Merkle Inclusion Proof</div>
+              <div class="metric-value" style="color: var(--accent-green);" id="inv-merkle">VALID</div>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <div class="metric-box">
+              <div class="metric-title">ML-DSA-65 Signature</div>
+              <div class="metric-value" style="color: var(--accent-green);" id="inv-sig">VALID</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-title">Document Binding Hash</div>
+              <div class="metric-value" style="color: var(--accent-green);" id="inv-binding">VALID</div>
+            </div>
+          </div>
+
+          <div class="terminal-window" id="investigator-log">Investigator workstation initialized. Standalone .tcproof export enabled.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: BFT LEDGER & CRYPTO -->
+    <div class="tab-panel" id="tab-ledger">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">4. Replicated Byzantine Fault Tolerant Ledger</span>
+          </div>
+          <div class="grid-2">
+            <div class="metric-box">
+              <div class="metric-title">Current Block Height</div>
+              <div class="metric-value" id="ledger-height">Block #5</div>
+            </div>
+            <div class="metric-box">
+              <div class="metric-title">Cluster Quorum (2f+1)</div>
+              <div class="metric-value" style="color: var(--accent-green);" id="ledger-quorum">4 / 4 Active</div>
+            </div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-title">Tip Block Hash</div>
+            <div class="metric-value" style="font-size: 0.75rem;" id="ledger-tip">0x8a94bc12df09312...</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-title">Transaction Root (Merkle)</div>
+            <div class="metric-value" style="font-size: 0.75rem;" id="ledger-merkle-root">0x3f5c9e1189ab72d...</div>
+          </div>
+
+          <div class="card-header" style="margin-top: 1.5rem;">
+            <span class="card-title" style="font-size: 0.95rem;">Validator Cluster State (N=4, f=1)</span>
+          </div>
+          <div style="font-size: 0.85rem; font-family: var(--font-mono); line-height: 1.8;">
+            <div>• Node 1 (Primary / Proposer): <span style="color: var(--accent-green);">ONLINE (Port 9301)</span></div>
+            <div>• Node 2 (Validator): <span style="color: var(--accent-green);">ONLINE (Port 9302)</span></div>
+            <div>• Node 3 (Validator): <span style="color: var(--accent-green);">ONLINE (Port 9303)</span></div>
+            <div>• Node 4 (Validator): <span style="color: var(--accent-green);">ONLINE (Port 9304)</span></div>
+          </div>
+          <div style="margin-top: 1rem;">
+            <button type="button" class="btn btn-primary btn-block" id="btn-bft-test">
+              Demonstrate BFT Resilience (Kill Node 4 & Catch Up)
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Cryptographic Architecture Invariants</span>
+          </div>
+          <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6;">
+            <div class="metric-box">
+              <strong>NIST FIPS 203 ML-KEM-768:</strong> Key encapsulation mechanism for multi-recipient confidentiality. IND-CCA2 post-quantum secure.
+            </div>
+            <div class="metric-box">
+              <strong>NIST FIPS 204 ML-DSA-65:</strong> Module-Lattice digital signatures for unforgeable non-repudiation over RFC 8785 canonical JSON events.
+            </div>
+            <div class="metric-box">
+              <strong>NIST SP 800-38D AES-256-GCM:</strong> 256-bit symmetric encryption with 128-bit authentication tags for bulk document payload protection.
+            </div>
+            <div class="metric-box">
+              <strong>NIST FIPS 202 SHA3-256:</strong> Cryptographic hashing for document binding and Merkle tree root commitments.
+            </div>
+            <div class="metric-box">
+              <strong>RFC 9106 Argon2id:</strong> Password-authenticated keystores ($m=64\text{MB}, t=3, p=4$) with Windows ACL lockdown.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div>TraceCrypt v1.0.0 • Smart India Hackathon 2026 Submission</div>
+    <div>Team Laccha Paratha (138638) • Problem Statement ID: SIH26237</div>
+    <div>100% Offline • Zero Egress • Post-Quantum Baseline</div>
+  </footer>
+
+  <script src="/ui/app.js"></script>
+</body>
+</html>

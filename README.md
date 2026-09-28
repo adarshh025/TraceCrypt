@@ -14,17 +14,21 @@
 * **Team ID:** `138638`
 * **Team Leader:** Adarsh Aher
 * **Team Members:** Adarsh Aher, Kashish, Twinkle Belhekar, Pratibha Kumari, Utkarsh Magar, Akash Rajput
-* **Submission Dossier:** [docs/sih/README.md](docs/sih/README.md) | [Live Demo Script](docs/SIH_DEMO_SCRIPT.md) | [Traceability Matrix](docs/SIH26237_TRACEABILITY.md) | [Architecture Diagrams](docs/diagrams/01_complete_architecture.md)
+* **Submission Dossier:** [docs/sih/README.md](docs/sih/README.md) | [Live Demo Script](docs/SIH_DEMO_SCRIPT.md) | [Traceability Matrix](docs/SIH26237_TRACEABILITY.md) | [Gap Matrix](docs/FINAL_IMPLEMENTATION_GAP_MATRIX.md) | [Architecture Diagrams](docs/diagrams/01_complete_architecture.md)
 
 ---
 
 ## ⚡ 60-Second Judge Quickstart
 
-TraceCrypt includes a 100% offline, automated demonstration engine designed specifically for SIH 2026 judges:
+TraceCrypt includes a 100% offline, automated demonstration engine and embedded web UI designed specifically for SIH 2026 judges:
 
 ```bash
 # 1. Run Complete 11-Stage End-to-End Demonstration & Adversarial Suite
 python -m tracecrypt.cli.main demo all
+
+# 2. Launch Air-Gapped Local Web UI Dashboard (Sender, Recipient, Investigator, Ledger)
+python -m uvicorn tracecrypt.api.app:create_app --host 127.0.0.1 --port 8000
+# Open in browser: http://127.0.0.1:8000/
 
 # Or run individual demonstration steps:
 python -m tracecrypt.cli.main demo init            # Initialize Root CA, 3 Recipients & 4-Node BFT Cluster
